@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.pdf binary
+*.zip binary
+*.cmd text eol=crlf
+# Preserve vendor archive bytes and checksums, including original whitespace.
+docs/reference/** -text -whitespace

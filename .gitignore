@@ -1,0 +1,14 @@
+.pio/
+.vscode/
+build*/
+__pycache__/
+*.pyc
+*.elf
+*.bin
+*.map
+sdkconfig
+sdkconfig.old
+dependencies.lock
+managed_components/
+compile_commands.json
+hil_logs/

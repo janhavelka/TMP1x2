@@ -1,0 +1,1400 @@
+[
+  {
+    "full_name": "TexasInstruments/ble-sdk-210-extra",
+    "default_branch": "master",
+    "description": "(Depricated!) Examples are now located in the ble_examples repository.",
+    "html_url": "https://github.com/TexasInstruments/ble-sdk-210-extra"
+  },
+  {
+    "full_name": "TexasInstruments/dri3wsegl",
+    "default_branch": "master",
+    "description": "DRI3 WSEGL plugin for PVR driver",
+    "html_url": "https://github.com/TexasInstruments/dri3wsegl"
+  },
+  {
+    "full_name": "TexasInstruments/azure-iot-pal-simplelink",
+    "default_branch": "master",
+    "description": "Adaptation layer for the Azure IoT SDK for TI's SimpleLink devices",
+    "html_url": "https://github.com/TexasInstruments/azure-iot-pal-simplelink"
+  },
+  {
+    "full_name": "TexasInstruments/testlink-code",
+    "default_branch": "testlink_1_9",
+    "description": "TestLink Open Source Test & Requirement Management System",
+    "html_url": "https://github.com/TexasInstruments/testlink-code"
+  },
+  {
+    "full_name": "TexasInstruments/neo-ai-dlr",
+    "default_branch": "master",
+    "description": "Neo-AI-DLR is a common runtime for machine learning models compiled by AWS SageMaker Neo, TVM, or TreeLite.",
+    "html_url": "https://github.com/TexasInstruments/neo-ai-dlr"
+  },
+  {
+    "full_name": "TexasInstruments/tvm",
+    "default_branch": "tidl-j7",
+    "description": "Open deep learning compiler stack for cpu, gpu and specialized accelerators",
+    "html_url": "https://github.com/TexasInstruments/tvm"
+  },
+  {
+    "full_name": "TexasInstruments/tensorflow",
+    "default_branch": "master",
+    "description": "An Open Source Machine Learning Framework for Everyone",
+    "html_url": "https://github.com/TexasInstruments/tensorflow"
+  },
+  {
+    "full_name": "TexasInstruments/meta-aws",
+    "default_branch": "master",
+    "description": "The Yocto Metadata Layer for baking AWS edge software into Embedded Linux distributions.",
+    "html_url": "https://github.com/TexasInstruments/meta-aws"
+  },
+  {
+    "full_name": "TexasInstruments/ti-wisunfan-pyspinel",
+    "default_branch": "release",
+    "description": "Python Host Interface Software for TI Wi-SUN FAN Software.  The underlying interface is adapted from OpenThread SPINEL interface (https://github.com/openthread/pyspinel)",
+    "html_url": "https://github.com/TexasInstruments/ti-wisunfan-pyspinel"
+  },
+  {
+    "full_name": "TexasInstruments/CC26XX-TCAN4550-EXAMPLES",
+    "default_branch": "master",
+    "description": "CC26XX CAN Examples",
+    "html_url": "https://github.com/TexasInstruments/CC26XX-TCAN4550-EXAMPLES"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai-gst-plugins",
+    "default_branch": "main",
+    "description": "Repository to host GStreamer plugins for TI's EdgeAI class of devices",
+    "html_url": "https://github.com/TexasInstruments/edgeai-gst-plugins"
+  },
+  {
+    "full_name": "TexasInstruments/onnxruntime",
+    "default_branch": "tidl-1.23",
+    "description": "ONNX Runtime: cross-platform, high performance ML inferencing and training accelerator",
+    "html_url": "https://github.com/TexasInstruments/onnxruntime"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai-yolov5",
+    "default_branch": "main",
+    "description": "This repository has been deprecated. Suggest to use edgeai-mmdetection in https://github.com/TexasInstruments/edgeai-tensorlab",
+    "html_url": "https://github.com/TexasInstruments/edgeai-yolov5"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai-modelzoo",
+    "default_branch": "main",
+    "description": "Edge AI Model Zoo",
+    "html_url": "https://github.com/TexasInstruments/edgeai-modelzoo"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai",
+    "default_branch": "main",
+    "description": "Edge AI Software and Development Tools",
+    "html_url": "https://github.com/TexasInstruments/edgeai"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai-tiovx-modules",
+    "default_branch": "main",
+    "description": "Repository to host TI's OpenVx modules used in the EdgeAI SDK. ",
+    "html_url": "https://github.com/TexasInstruments/edgeai-tiovx-modules"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai-tidl-tools",
+    "default_branch": "master",
+    "description": "Edgeai TIDL Tools and Examples - This repository contains Tools and example developed for Deep learning runtime (DLRT) offering provided by TI\u2019s edge AI solutions. ",
+    "html_url": "https://github.com/TexasInstruments/edgeai-tidl-tools"
+  },
+  {
+    "full_name": "TexasInstruments/HOGP-BLE-HID-EXAMPLE",
+    "default_branch": "main",
+    "description": "HOGP (HID Over GATT Profile) BLE Example for the CC26X2 devices.",
+    "html_url": "https://github.com/TexasInstruments/HOGP-BLE-HID-EXAMPLE"
+  },
+  {
+    "full_name": "TexasInstruments/ti-wisunfantund",
+    "default_branch": "release",
+    "description": "TI Userspace network Daemon",
+    "html_url": "https://github.com/TexasInstruments/ti-wisunfantund"
+  },
+  {
+    "full_name": "TexasInstruments/tflite-micro",
+    "default_branch": "main",
+    "description": "TensorFlow Lite for Microcontrollers",
+    "html_url": "https://github.com/TexasInstruments/tflite-micro"
+  },
+  {
+    "full_name": "TexasInstruments/ti-gpio-py",
+    "default_branch": "master",
+    "description": "A Linux based Python library for TI GPIO RPi header enabled platforms",
+    "html_url": "https://github.com/TexasInstruments/ti-gpio-py"
+  },
+  {
+    "full_name": "TexasInstruments/ti-gpio-cpp",
+    "default_branch": "master",
+    "description": "A Linux based CPP library for TI GPIO RPi header enabled platforms",
+    "html_url": "https://github.com/TexasInstruments/ti-gpio-cpp"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai-yolox",
+    "default_branch": "main",
+    "description": "This repository has been moved. The new location is in https://github.com/TexasInstruments/edgeai-tensorlab",
+    "html_url": "https://github.com/TexasInstruments/edgeai-yolox"
+  },
+  {
+    "full_name": "TexasInstruments/simplelink-lowpower-f2-sdk",
+    "default_branch": "main",
+    "description": "SimpleLink Low Power F2 SDK",
+    "html_url": "https://github.com/TexasInstruments/simplelink-lowpower-f2-sdk"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai-robotics-demos",
+    "default_branch": "master",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/edgeai-robotics-demos"
+  },
+  {
+    "full_name": "TexasInstruments/cc32xx_open_sdk",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/cc32xx_open_sdk"
+  },
+  {
+    "full_name": "TexasInstruments/matter-archive",
+    "default_branch": "v1.x-ti-matter",
+    "description": "Archived Copy of the Texas Instruments fork of the Connectivity Standards Alliance connectedhomeip repository. Please use the latest TI Fork for the latest updates.",
+    "html_url": "https://github.com/TexasInstruments/matter-archive"
+  },
+  {
+    "full_name": "TexasInstruments/texasinstruments.github.io",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/texasinstruments.github.io"
+  },
+  {
+    "full_name": "TexasInstruments/ti-d3-mobile-robot-demos",
+    "default_branch": "master",
+    "description": "TI-D3 Mobile Robot Demos",
+    "html_url": "https://github.com/TexasInstruments/ti-d3-mobile-robot-demos"
+  },
+  {
+    "full_name": "TexasInstruments/mcupsdk-FreeRTOS-Kernel",
+    "default_branch": "mcupsdk_v11.1.0_main",
+    "description": "TI Fork of the FreeRTOS kernel repository, used as part of the MCU+ SDK",
+    "html_url": "https://github.com/TexasInstruments/mcupsdk-FreeRTOS-Kernel"
+  },
+  {
+    "full_name": "TexasInstruments/mcupsdk-FreeRTOS-POSIX",
+    "default_branch": "mcupsdk_v1.0_main",
+    "description": "TI Fork of the FreeRTOS POSIX repository, used as part of the MCU+ SDK ",
+    "html_url": "https://github.com/TexasInstruments/mcupsdk-FreeRTOS-POSIX"
+  },
+  {
+    "full_name": "TexasInstruments/mcupsdk-FreeRTOS-FAT",
+    "default_branch": "mcupsdk_v1.0_main",
+    "description": "TI Fork of the FreeRTOS FAT repository, used as part of the MCU+ SDK ",
+    "html_url": "https://github.com/TexasInstruments/mcupsdk-FreeRTOS-FAT"
+  },
+  {
+    "full_name": "TexasInstruments/mcupsdk-enet-lld",
+    "default_branch": "mcupsdk_next",
+    "description": "Unified Ethernet Low-Level Driver (Enet LLD)  for the different Ethernet peripherals found in Sitara MCU+ class of devices. Part of TI MCU+ SDK",
+    "html_url": "https://github.com/TexasInstruments/mcupsdk-enet-lld"
+  },
+  {
+    "full_name": "TexasInstruments/mcupsdk-manifests",
+    "default_branch": "main",
+    "description": "git-repo XML manifests to setup source code directory structure for TI MCU+ SDK",
+    "html_url": "https://github.com/TexasInstruments/mcupsdk-manifests"
+  },
+  {
+    "full_name": "TexasInstruments/mcupsdk-core",
+    "default_branch": "next",
+    "description": "TI MCU+ SDK core source code repository with drivers, protocol stacks and example applications",
+    "html_url": "https://github.com/TexasInstruments/mcupsdk-core"
+  },
+  {
+    "full_name": "TexasInstruments/mcupsdk-setup",
+    "default_branch": "next",
+    "description": "Scripts to install development environment for TI MCU+ SDK",
+    "html_url": "https://github.com/TexasInstruments/mcupsdk-setup"
+  },
+  {
+    "full_name": "TexasInstruments/ble_energia",
+    "default_branch": "master",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/ble_energia"
+  },
+  {
+    "full_name": "TexasInstruments/swol",
+    "default_branch": "master",
+    "description": "Single Wire Output Logger",
+    "html_url": "https://github.com/TexasInstruments/swol"
+  },
+  {
+    "full_name": "TexasInstruments/flash-rover",
+    "default_branch": "master",
+    "description": "Read and write to external flash on a TI CC13xx/CC26xx device directly from host",
+    "html_url": "https://github.com/TexasInstruments/flash-rover"
+  },
+  {
+    "full_name": "TexasInstruments/proprietary_examples",
+    "default_branch": "master",
+    "description": "Proprietary RF Examples",
+    "html_url": "https://github.com/TexasInstruments/proprietary_examples"
+  },
+  {
+    "full_name": "TexasInstruments/ot-ti",
+    "default_branch": "thread-v1.4-ti",
+    "description": "TI-Openthread",
+    "html_url": "https://github.com/TexasInstruments/ot-ti"
+  },
+  {
+    "full_name": "TexasInstruments/mcupsdk-cmsis",
+    "default_branch": "main",
+    "description": "CMSIS header files required for TI MCU+ SDK",
+    "html_url": "https://github.com/TexasInstruments/mcupsdk-cmsis"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai-gst-apps",
+    "default_branch": "main",
+    "description": "Gstreamer based Edge AI reference application",
+    "html_url": "https://github.com/TexasInstruments/edgeai-gst-apps"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai-studio-agent",
+    "default_branch": "main",
+    "description": "Edge AI Studio device agent for TI devices",
+    "html_url": "https://github.com/TexasInstruments/edgeai-studio-agent"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai-app-stack",
+    "default_branch": "main",
+    "description": "Repo which installs other Edge AI repos to build on PC and install on a target file system",
+    "html_url": "https://github.com/TexasInstruments/edgeai-app-stack"
+  },
+  {
+    "full_name": "TexasInstruments/ti-amazon-sidewalk-sample-iot-app",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/ti-amazon-sidewalk-sample-iot-app"
+  },
+  {
+    "full_name": "TexasInstruments/linux-kernel",
+    "default_branch": "ti-mainline",
+    "description": "Community Version of Linux kernel source tree for TI SoCs based EVMs. Note: this is not the official TI SDK offering. This is just queue of patches pending upstream ",
+    "html_url": "https://github.com/TexasInstruments/linux-kernel"
+  },
+  {
+    "full_name": "TexasInstruments/simplelink-ti_sidewalk-examples",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/simplelink-ti_sidewalk-examples"
+  },
+  {
+    "full_name": "TexasInstruments/simplelink-lowpower-f3-sdk",
+    "default_branch": "main",
+    "description": "Texas Instrument\u2019s SimpleLink Low Power F3 Software Development Kit",
+    "html_url": "https://github.com/TexasInstruments/simplelink-lowpower-f3-sdk"
+  },
+  {
+    "full_name": "TexasInstruments/simplelink-ble5stack-examples",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/simplelink-ble5stack-examples"
+  },
+  {
+    "full_name": "TexasInstruments/ot-reference-release",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/ot-reference-release"
+  },
+  {
+    "full_name": "TexasInstruments/simplelink-connect",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/simplelink-connect"
+  },
+  {
+    "full_name": "TexasInstruments/ti-bdebstrap",
+    "default_branch": "master",
+    "description": "Build custom bootstrap images using bdebstrap",
+    "html_url": "https://github.com/TexasInstruments/ti-bdebstrap"
+  },
+  {
+    "full_name": "TexasInstruments/simplelink-ti_wisunfan-examples",
+    "default_branch": "main",
+    "description": "TI WiSunFan Examples",
+    "html_url": "https://github.com/TexasInstruments/simplelink-ti_wisunfan-examples"
+  },
+  {
+    "full_name": "TexasInstruments/seva",
+    "default_branch": "main",
+    "description": "Seva is an Embedded platform demo tool built using Flutter and Go. The word Seva is derived from Sanskrit which means selfless service. This service attempts to act as a remote head for embedded devices, allowing users to easily launch approved demos from a predetermined source using docker-compose.",
+    "html_url": "https://github.com/TexasInstruments/seva"
+  },
+  {
+    "full_name": "TexasInstruments/seva-browser",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/seva-browser"
+  },
+  {
+    "full_name": "TexasInstruments/seva-apps",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/seva-apps"
+  },
+  {
+    "full_name": "TexasInstruments/seva-adocker",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/seva-adocker"
+  },
+  {
+    "full_name": "TexasInstruments/seva-design-gallery",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/seva-design-gallery"
+  },
+  {
+    "full_name": "TexasInstruments/simplelink-prop_rf-examples",
+    "default_branch": "main",
+    "description": "Texas Instrument\u2019s SimpleLink Low Power Proprietary RF Examples",
+    "html_url": "https://github.com/TexasInstruments/simplelink-prop_rf-examples"
+  },
+  {
+    "full_name": "TexasInstruments/simplelink-connect-fw-bins",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/simplelink-connect-fw-bins"
+  },
+  {
+    "full_name": "TexasInstruments/tiovx",
+    "default_branch": "main",
+    "description": "TI's implementation of the OpenVX standard.",
+    "html_url": "https://github.com/TexasInstruments/tiovx"
+  },
+  {
+    "full_name": "TexasInstruments/ind-comms-sdk",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/ind-comms-sdk"
+  },
+  {
+    "full_name": "TexasInstruments/motor-control-sdk",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/motor-control-sdk"
+  },
+  {
+    "full_name": "TexasInstruments/ti-apps-launcher",
+    "default_branch": "master",
+    "description": "QT based application launcher for TI Platforms",
+    "html_url": "https://github.com/TexasInstruments/ti-apps-launcher"
+  },
+  {
+    "full_name": "TexasInstruments/onnx",
+    "default_branch": "main",
+    "description": "Open standard for machine learning interoperability",
+    "html_url": "https://github.com/TexasInstruments/onnx"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai-tiovx-apps",
+    "default_branch": "develop",
+    "description": "Reference OpenVx based applications",
+    "html_url": "https://github.com/TexasInstruments/edgeai-tiovx-apps"
+  },
+  {
+    "full_name": "TexasInstruments/ti-debpkgs",
+    "default_branch": "main",
+    "description": "Apt repository for Texas Instruments",
+    "html_url": "https://github.com/TexasInstruments/ti-debpkgs"
+  },
+  {
+    "full_name": "TexasInstruments/c2000ware-core-sdk",
+    "default_branch": "main",
+    "description": "Repository for C2000Ware ",
+    "html_url": "https://github.com/TexasInstruments/c2000ware-core-sdk"
+  },
+  {
+    "full_name": "TexasInstruments/c2000ware-c2000-academy",
+    "default_branch": "main",
+    "description": "Repository of C2000 Academy lab exercises",
+    "html_url": "https://github.com/TexasInstruments/c2000ware-c2000-academy"
+  },
+  {
+    "full_name": "TexasInstruments/debian-repos",
+    "default_branch": "master",
+    "description": "Debian package builder scripts",
+    "html_url": "https://github.com/TexasInstruments/debian-repos"
+  },
+  {
+    "full_name": "TexasInstruments/c2000ware-FreeRTOS",
+    "default_branch": "main",
+    "description": "This repository contains FreeRTOS kernel source/header files , kernel ports and demos for C2000 devices",
+    "html_url": "https://github.com/TexasInstruments/c2000ware-FreeRTOS"
+  },
+  {
+    "full_name": "TexasInstruments/motor-control-setup",
+    "default_branch": "main",
+    "description": "Motor Control SDK SETUP is an auxiliary repository to help setup the Motor Control SDK for build. This repo mainly contains shell scripts which will download and install the dependencies  for Motor Control SDK",
+    "html_url": "https://github.com/TexasInstruments/motor-control-setup"
+  },
+  {
+    "full_name": "TexasInstruments/motor-control-manifests",
+    "default_branch": "main",
+    "description": "MOTOR CONTROL SDK MANIFESTS is the starting point to developing with the MOTOR CONTROL SDK. MOTOR CONTROL SDK uses the repo tool to clone and manage multiple repositories.",
+    "html_url": "https://github.com/TexasInstruments/motor-control-manifests"
+  },
+  {
+    "full_name": "TexasInstruments/simplelink-ti154stack-examples",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/simplelink-ti154stack-examples"
+  },
+  {
+    "full_name": "TexasInstruments/enet-tsn-stack",
+    "default_branch": "next",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/enet-tsn-stack"
+  },
+  {
+    "full_name": "TexasInstruments/mspm0-sdk",
+    "default_branch": "main",
+    "description": "Git version of Texas Instrument's MSPM0 SDK",
+    "html_url": "https://github.com/TexasInstruments/mspm0-sdk"
+  },
+  {
+    "full_name": "TexasInstruments/simplelink-zstack-examples",
+    "default_branch": "main",
+    "description": "ZStack (Zigbee) Examples",
+    "html_url": "https://github.com/TexasInstruments/simplelink-zstack-examples"
+  },
+  {
+    "full_name": "TexasInstruments/ti-tisdk-makefile",
+    "default_branch": "master",
+    "description": "Makefiles and Makefile generation scripts for TI Linux SDK",
+    "html_url": "https://github.com/TexasInstruments/ti-tisdk-makefile"
+  },
+  {
+    "full_name": "TexasInstruments/Beyond-SDK",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/Beyond-SDK"
+  },
+  {
+    "full_name": "TexasInstruments/simplelink-dmm-examples",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/simplelink-dmm-examples"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai-keyword-spotting",
+    "default_branch": "master",
+    "description": "Arm-based keyword spotting examples on live data using python3 in processors Linux SDK",
+    "html_url": "https://github.com/TexasInstruments/edgeai-keyword-spotting"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai-modeloptimization",
+    "default_branch": "main",
+    "description": "This repository has been moved. The new location is in https://github.com/TexasInstruments/edgeai-tensorlab",
+    "html_url": "https://github.com/TexasInstruments/edgeai-modeloptimization"
+  },
+  {
+    "full_name": "TexasInstruments/mcupsdk-core-k3",
+    "default_branch": "k3_main",
+    "description": "TI MCU+ SDK core source code repository with drivers and example applications for K3 family of MPUs.",
+    "html_url": "https://github.com/TexasInstruments/mcupsdk-core-k3"
+  },
+  {
+    "full_name": "TexasInstruments/mcupsdk-rm-pm-hal",
+    "default_branch": "main",
+    "description": "Resource Management and Power Management HAL",
+    "html_url": "https://github.com/TexasInstruments/mcupsdk-rm-pm-hal"
+  },
+  {
+    "full_name": "TexasInstruments/mcupsdk-dmautils",
+    "default_branch": "master",
+    "description": "TI MCU+ SDK DMA Utils for AM62A",
+    "html_url": "https://github.com/TexasInstruments/mcupsdk-dmautils"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai-caffe2onnx",
+    "default_branch": "main",
+    "description": "Convert Caffe models to ONNX.",
+    "html_url": "https://github.com/TexasInstruments/edgeai-caffe2onnx"
+  },
+  {
+    "full_name": "TexasInstruments/ti-ethernet-software",
+    "default_branch": "main",
+    "description": "Repository for Ethernet PHY drivers for Linux and RTOS.",
+    "html_url": "https://github.com/TexasInstruments/ti-ethernet-software"
+  },
+  {
+    "full_name": "TexasInstruments/proc-safety-checkers",
+    "default_branch": "master",
+    "description": "Safety checkers ",
+    "html_url": "https://github.com/TexasInstruments/proc-safety-checkers"
+  },
+  {
+    "full_name": "TexasInstruments/ti-docker-images",
+    "default_branch": "main",
+    "description": "This repository provides a ubuntu 22.04 based docker image with all the packages that are required for Yocto Builds. The docker image can also be used to Install & Build via Top Level Makefile from sources for TI Arm based microprocessors",
+    "html_url": "https://github.com/TexasInstruments/ti-docker-images"
+  },
+  {
+    "full_name": "TexasInstruments/PMIC-RTOS-DRIVERS",
+    "default_branch": "main",
+    "description": "Low-Level Drivers for use with TI PMICs in RTOS or Bare-Metal applications.",
+    "html_url": "https://github.com/TexasInstruments/PMIC-RTOS-DRIVERS"
+  },
+  {
+    "full_name": "TexasInstruments/tinyml-tensorlab",
+    "default_branch": "main",
+    "description": "MCU Analytics / ML Model Development Software",
+    "html_url": "https://github.com/TexasInstruments/tinyml-tensorlab"
+  },
+  {
+    "full_name": "TexasInstruments/simplelink-coresdk-examples",
+    "default_branch": "main",
+    "description": "SimpleLink Core SDK Examples",
+    "html_url": "https://github.com/TexasInstruments/simplelink-coresdk-examples"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai-tensorlab",
+    "default_branch": "main",
+    "description": "Edge AI Model Development Tools",
+    "html_url": "https://github.com/TexasInstruments/edgeai-tensorlab"
+  },
+  {
+    "full_name": "TexasInstruments/meta-tisdk",
+    "default_branch": "master",
+    "description": "Yocto layer for TI Foundational SDK for Sitara MPU and Jacinto devices",
+    "html_url": "https://github.com/TexasInstruments/meta-tisdk"
+  },
+  {
+    "full_name": "TexasInstruments/mcupsdk-littlefs",
+    "default_branch": "mcupsdk_v2.9.3_main",
+    "description": "A little fail-safe filesystem designed for microcontrollers",
+    "html_url": "https://github.com/TexasInstruments/mcupsdk-littlefs"
+  },
+  {
+    "full_name": "TexasInstruments/multicore-elf",
+    "default_branch": "main",
+    "description": "This is the official TI repository for the multicore-elf python tool to generate a multicore-elf image from input elfs.",
+    "html_url": "https://github.com/TexasInstruments/multicore-elf"
+  },
+  {
+    "full_name": "TexasInstruments/mcupsdk-sysconfig",
+    "default_branch": "next",
+    "description": "Sysconfig metadata repo for mcupsdk driver modules",
+    "html_url": "https://github.com/TexasInstruments/mcupsdk-sysconfig"
+  },
+  {
+    "full_name": "TexasInstruments/tifs-mcu-common",
+    "default_branch": "next",
+    "description": "TIFS-MCU common repo for security drivers and crypto modules",
+    "html_url": "https://github.com/TexasInstruments/tifs-mcu-common"
+  },
+  {
+    "full_name": "TexasInstruments/open-pru",
+    "default_branch": "main",
+    "description": "Open PRU",
+    "html_url": "https://github.com/TexasInstruments/open-pru"
+  },
+  {
+    "full_name": "TexasInstruments/buildroot-external-TI",
+    "default_branch": "main",
+    "description": "External Buildroot tree for SITARA boards configurations",
+    "html_url": "https://github.com/TexasInstruments/buildroot-external-TI"
+  },
+  {
+    "full_name": "TexasInstruments/precision-adc-examples",
+    "default_branch": "main",
+    "description": "Industry-leading SAR and Delta-Sigma ADCs with easy-to-use design resources to enable premium performance",
+    "html_url": "https://github.com/TexasInstruments/precision-adc-examples"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai-robotics-sdk-docker",
+    "default_branch": "master",
+    "description": "This repository hosts the Robotics SDK Docker images for Texas Instruments Edge AI Processors, including AM62A, TDA4VM, AM67A, AM68A, and AM69A. Additionally, the Docker image for the visualization PC is also available here.",
+    "html_url": "https://github.com/TexasInstruments/edgeai-robotics-sdk-docker"
+  },
+  {
+    "full_name": "TexasInstruments/C2000-IDEA",
+    "default_branch": "main",
+    "description": "C2000 IDE Assist is a Visual Studio Code and Code Composer Studio Theia/20 extension that enables various tools and features for C2000 MCUs.",
+    "html_url": "https://github.com/TexasInstruments/C2000-IDEA"
+  },
+  {
+    "full_name": "TexasInstruments/simplelink-hal_ti",
+    "default_branch": "218d961-ti-1.00",
+    "description": "Texas Instruments SimpleLink downstream of https://github.com/zephyrproject-rtos/hal_ti",
+    "html_url": "https://github.com/TexasInstruments/simplelink-hal_ti"
+  },
+  {
+    "full_name": "TexasInstruments/simplelink-zephyr",
+    "default_branch": "v3.7.0-ti-1.00",
+    "description": "Texas Instruments SimpleLink downstream of https://github.com/zephyrproject-rtos/zephyr",
+    "html_url": "https://github.com/TexasInstruments/simplelink-zephyr"
+  },
+  {
+    "full_name": "TexasInstruments/processor-sdk-doc",
+    "default_branch": "master",
+    "description": "Processor SDK (PSDK) documentation source",
+    "html_url": "https://github.com/TexasInstruments/processor-sdk-doc"
+  },
+  {
+    "full_name": "TexasInstruments/dfu-util",
+    "default_branch": "master",
+    "description": "Fork of dfu-util with TI modifications",
+    "html_url": "https://github.com/TexasInstruments/dfu-util"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai-robotics-sdk",
+    "default_branch": "master",
+    "description": "Robotics SDK provides a ROS-based robotics software development environment for Texas Instruments Edge AI Processors, including AM62A, TDA4VM, AM67A, AM68A, and AM69A.",
+    "html_url": "https://github.com/TexasInstruments/edgeai-robotics-sdk"
+  },
+  {
+    "full_name": "TexasInstruments/k3sign",
+    "default_branch": "main",
+    "description": "Utility to sign bootloader binaries for TDA4x and AM6x devices",
+    "html_url": "https://github.com/TexasInstruments/k3sign"
+  },
+  {
+    "full_name": "TexasInstruments/enet-firmware",
+    "default_branch": "master",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/enet-firmware"
+  },
+  {
+    "full_name": "TexasInstruments/.github",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/.github"
+  },
+  {
+    "full_name": "TexasInstruments/AM26x-add-on-SDK",
+    "default_branch": "main",
+    "description": "This repository is a collection of software applications created as a part of AM26x Academy labs, Application Notes, FAQs etc on TI AM26x Microcontrollers. These applications are not a part of the standard MCU_PLUS_SDK.",
+    "html_url": "https://github.com/TexasInstruments/AM26x-add-on-SDK"
+  },
+  {
+    "full_name": "TexasInstruments/ethernet-rtos-drivers",
+    "default_branch": "main",
+    "description": "Repository for RTOS Ethernet PHY Drivers",
+    "html_url": "https://github.com/TexasInstruments/ethernet-rtos-drivers"
+  },
+  {
+    "full_name": "TexasInstruments/f29h85x-sdk",
+    "default_branch": "main",
+    "description": "Core SDK repository for F29H85x real-time MCUs , this repository does not accept GitHub pull requests or patches at this time.",
+    "html_url": "https://github.com/TexasInstruments/f29h85x-sdk"
+  },
+  {
+    "full_name": "TexasInstruments/snagboot",
+    "default_branch": "main",
+    "description": "Generic recovery and reflashing tool for embedded platforms",
+    "html_url": "https://github.com/TexasInstruments/snagboot"
+  },
+  {
+    "full_name": "TexasInstruments/threadx",
+    "default_branch": "v6.4.1_main",
+    "description": "Eclipse ThreadX is an advanced real-time operating system (RTOS) designed specifically for deeply embedded applications.",
+    "html_url": "https://github.com/TexasInstruments/threadx"
+  },
+  {
+    "full_name": "TexasInstruments/arm-trusted-firmware",
+    "default_branch": "ti-tfa-2.14.y",
+    "description": "Texas Instruments fork of Trusted Firmware-A for AM62L till it's upstream",
+    "html_url": "https://github.com/TexasInstruments/arm-trusted-firmware"
+  },
+  {
+    "full_name": "TexasInstruments/ti-lvgl-demo",
+    "default_branch": "master",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/ti-lvgl-demo"
+  },
+  {
+    "full_name": "TexasInstruments/lv_port_linux",
+    "default_branch": "master",
+    "description": "LVGL configured to work with a standard Linux framebuffer",
+    "html_url": "https://github.com/TexasInstruments/lv_port_linux"
+  },
+  {
+    "full_name": "TexasInstruments/lvgl",
+    "default_branch": "master",
+    "description": "Embedded graphics library to create beautiful UIs for any MCU, MPU and display type. ",
+    "html_url": "https://github.com/TexasInstruments/lvgl"
+  },
+  {
+    "full_name": "TexasInstruments/zephyr",
+    "default_branch": "main",
+    "description": "Primary Git Repository for the Zephyr Project. Zephyr is a new generation, scalable, optimized, secure RTOS for multiple hardware architectures.",
+    "html_url": "https://github.com/TexasInstruments/zephyr"
+  },
+  {
+    "full_name": "TexasInstruments/am26x-hsp",
+    "default_branch": "main",
+    "description": "This  repository does not accept GitHub pull requests or patches at this time.",
+    "html_url": "https://github.com/TexasInstruments/am26x-hsp"
+  },
+  {
+    "full_name": "TexasInstruments/mcupsdk-coremark-pro",
+    "default_branch": "main",
+    "description": "Containing dozens of real-world and synthetic tests, CoreMark\u00ae-PRO (2015) is an industry-standard benchmark that measures the multi-processor performance of central processing units (CPU) and embedded microcrontrollers (MCU)",
+    "html_url": "https://github.com/TexasInstruments/mcupsdk-coremark-pro"
+  },
+  {
+    "full_name": "TexasInstruments/matter",
+    "default_branch": "matter-v1.5-ti",
+    "description": "Texas Instruments fork of the Connectivity Standards Alliance connectedhomeip repository",
+    "html_url": "https://github.com/TexasInstruments/matter"
+  },
+  {
+    "full_name": "TexasInstruments/mesa",
+    "default_branch": "main",
+    "description": "Mesa 3D graphics library -- PowerVR Patch Playground",
+    "html_url": "https://github.com/TexasInstruments/mesa"
+  },
+  {
+    "full_name": "TexasInstruments/oob-demo-assets",
+    "default_branch": "master",
+    "description": "This repository serves as a collection of open-source pre-trained deep learning models. These models are currently used by the Yocto SDK for TI processors for DL inferencing on Cortex-A ARM cores.",
+    "html_url": "https://github.com/TexasInstruments/oob-demo-assets"
+  },
+  {
+    "full_name": "TexasInstruments/rpmsg-dma",
+    "default_branch": "main",
+    "description": "A lightweight C library and example implementation for RPMsg-based audio offloading using DMA Heap buffers. Includes shared library, real-time audio processing demo, Ethernet based control, and FFT-based audio processing. ",
+    "html_url": "https://github.com/TexasInstruments/rpmsg-dma"
+  },
+  {
+    "full_name": "TexasInstruments/armbian-build",
+    "default_branch": "ti-main",
+    "description": "Armbian Linux build framework generates custom Debian or Ubuntu image for x86, aarch64, riscv64 & armhf",
+    "html_url": "https://github.com/TexasInstruments/armbian-build"
+  },
+  {
+    "full_name": "TexasInstruments/ti-simplelink-pacs",
+    "default_branch": "main",
+    "description": "Rust Peripheral Access Crates (PACs) for TI SimpleLink wireless connectivity microcontrollers",
+    "html_url": "https://github.com/TexasInstruments/ti-simplelink-pacs"
+  },
+  {
+    "full_name": "TexasInstruments/ti-openocd",
+    "default_branch": "ti-release",
+    "description": "TI OpenOCD Fork",
+    "html_url": "https://github.com/TexasInstruments/ti-openocd"
+  },
+  {
+    "full_name": "TexasInstruments/graphics-tests",
+    "default_branch": "master",
+    "description": "Various graphics related tests that do not currently have any other test mechanisms",
+    "html_url": "https://github.com/TexasInstruments/graphics-tests"
+  },
+  {
+    "full_name": "TexasInstruments/proc-ospi-tuning",
+    "default_branch": "main",
+    "description": "OSPI Tuning Algorithm and software test bench",
+    "html_url": "https://github.com/TexasInstruments/proc-ospi-tuning"
+  },
+  {
+    "full_name": "TexasInstruments/ti-u-boot",
+    "default_branch": "ti-u-boot-2026.01",
+    "description": "Mirror of https://git.ti.com/cgit/ti-u-boot/ti-u-boot/",
+    "html_url": "https://github.com/TexasInstruments/ti-u-boot"
+  },
+  {
+    "full_name": "TexasInstruments/meta-ti",
+    "default_branch": "scarthgap",
+    "description": "Mirror of - https://git.ti.com/cgit/arago-project/meta-ti/ - Updates every 6 hours",
+    "html_url": "https://github.com/TexasInstruments/meta-ti"
+  },
+  {
+    "full_name": "TexasInstruments/ti-linux-kernel",
+    "default_branch": "ti-linux-6.18.y",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/ti-linux-kernel"
+  },
+  {
+    "full_name": "TexasInstruments/ti-linux-firmware",
+    "default_branch": "ti-linux-firmware",
+    "description": "Mirror of https://git.ti.com/cgit/processor-firmware/ti-linux-firmware",
+    "html_url": "https://github.com/TexasInstruments/ti-linux-firmware"
+  },
+  {
+    "full_name": "TexasInstruments/img-vxe-vxd",
+    "default_branch": "scarthgap/k6.12",
+    "description": "Mirror of https://git.ti.com/cgit/multimedia/img-vxe-vxd/",
+    "html_url": "https://github.com/TexasInstruments/img-vxe-vxd"
+  },
+  {
+    "full_name": "TexasInstruments/ti-img-rogue-driver",
+    "default_branch": "master",
+    "description": "Mirror of https://git.ti.com/cgit/graphics/ti-img-rogue-driver/",
+    "html_url": "https://github.com/TexasInstruments/ti-img-rogue-driver"
+  },
+  {
+    "full_name": "TexasInstruments/ti-img-rogue-umlibs",
+    "default_branch": "master",
+    "description": "Mirror of - https://git.ti.com/cgit/graphics/ti-img-rogue-umlibs/",
+    "html_url": "https://github.com/TexasInstruments/ti-img-rogue-umlibs"
+  },
+  {
+    "full_name": "TexasInstruments/meta-arago",
+    "default_branch": "scarthgap",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/meta-arago"
+  },
+  {
+    "full_name": "TexasInstruments/boot-stage-record",
+    "default_branch": "master",
+    "description": "Boot Stage Record library",
+    "html_url": "https://github.com/TexasInstruments/boot-stage-record"
+  },
+  {
+    "full_name": "TexasInstruments/msp-hal_ti",
+    "default_branch": "stable",
+    "description": "Texas Instruments MSP HAL downstream of https://github.com/zephyrproject-rtos/hal_ti",
+    "html_url": "https://github.com/TexasInstruments/msp-hal_ti"
+  },
+  {
+    "full_name": "TexasInstruments/omap-hwspinlock-test",
+    "default_branch": "master",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/omap-hwspinlock-test"
+  },
+  {
+    "full_name": "TexasInstruments/optee_test",
+    "default_branch": "master",
+    "description": "Test suite",
+    "html_url": "https://github.com/TexasInstruments/optee_test"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai-tidlrunner",
+    "default_branch": "main",
+    "description": "Bring Your Edge AI Models For Compilation, Inference, Analysis or Benchmark (BYOM) using TI Deep Learning (TIDL) - Edge AI in TI Processors",
+    "html_url": "https://github.com/TexasInstruments/edgeai-tidlrunner"
+  },
+  {
+    "full_name": "TexasInstruments/ltp-ddt",
+    "default_branch": "cicd",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/ltp-ddt"
+  },
+  {
+    "full_name": "TexasInstruments/lv_demos",
+    "default_branch": "master",
+    "description": "Examples, tutorials and applications for the LVGL embedded GUI library",
+    "html_url": "https://github.com/TexasInstruments/lv_demos"
+  },
+  {
+    "full_name": "TexasInstruments/serialcheck",
+    "default_branch": "master",
+    "description": "serial port testing utility",
+    "html_url": "https://github.com/TexasInstruments/serialcheck"
+  },
+  {
+    "full_name": "TexasInstruments/usb-pd",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/usb-pd"
+  },
+  {
+    "full_name": "TexasInstruments/msp-zephyr",
+    "default_branch": "dev",
+    "description": "Texas Instruments fork of the Zephyr Project for MSP Microcontrollers. Zephyr is a new generation, scalable, optimized, secure RTOS for multiple hardware architectures.",
+    "html_url": "https://github.com/TexasInstruments/msp-zephyr"
+  },
+  {
+    "full_name": "TexasInstruments/webserver-oob-demo",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/webserver-oob-demo"
+  },
+  {
+    "full_name": "TexasInstruments/mcu_plus_sdk_am263x",
+    "default_branch": "next",
+    "description": "mcu_plus_sdk installer package for am263x generated on a periodic basis",
+    "html_url": "https://github.com/TexasInstruments/mcu_plus_sdk_am263x"
+  },
+  {
+    "full_name": "TexasInstruments/mcu_plus_sdk_am263px",
+    "default_branch": "next",
+    "description": "mcu_plus_sdk installer package for am263px generated on a periodic basis",
+    "html_url": "https://github.com/TexasInstruments/mcu_plus_sdk_am263px"
+  },
+  {
+    "full_name": "TexasInstruments/mcu_plus_sdk_am261x",
+    "default_branch": "next",
+    "description": "mcu_plus_sdk installer package for am261x generated on a periodic basis",
+    "html_url": "https://github.com/TexasInstruments/mcu_plus_sdk_am261x"
+  },
+  {
+    "full_name": "TexasInstruments/tida-010939-cg5317-utils",
+    "default_branch": "main",
+    "description": "Lumissil CG5317 Utilities",
+    "html_url": "https://github.com/TexasInstruments/tida-010939-cg5317-utils"
+  },
+  {
+    "full_name": "TexasInstruments/security-utils",
+    "default_branch": "release",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/security-utils"
+  },
+  {
+    "full_name": "TexasInstruments/tida-010939-everest-config",
+    "default_branch": "main",
+    "description": "TIDA",
+    "html_url": "https://github.com/TexasInstruments/tida-010939-everest-config"
+  },
+  {
+    "full_name": "TexasInstruments/simplelink-wifi-sdk",
+    "default_branch": "main",
+    "description": "Texas Instrument\u2019s SimpleLink Wifi Software Development Kit",
+    "html_url": "https://github.com/TexasInstruments/simplelink-wifi-sdk"
+  },
+  {
+    "full_name": "TexasInstruments/simplelink-coresdk_wifi-examples",
+    "default_branch": "main",
+    "description": "SimpleLink Wifi Core SDK Examples ",
+    "html_url": "https://github.com/TexasInstruments/simplelink-coresdk_wifi-examples"
+  },
+  {
+    "full_name": "TexasInstruments/simplelink-wifi-examples",
+    "default_branch": "main",
+    "description": "Simplelink Wifi SDK Examples",
+    "html_url": "https://github.com/TexasInstruments/simplelink-wifi-examples"
+  },
+  {
+    "full_name": "TexasInstruments/asm-hal_ti",
+    "default_branch": "master",
+    "description": "This is a fork of zephyrproject's Hal_TI Repository for the downstream contributions on the ASM devices",
+    "html_url": "https://github.com/TexasInstruments/asm-hal_ti"
+  },
+  {
+    "full_name": "TexasInstruments/mcal_am263x",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/mcal_am263x"
+  },
+  {
+    "full_name": "TexasInstruments/mcal_am263px",
+    "default_branch": "main",
+    "description": "Periodic MCAL package generated for AM263Px",
+    "html_url": "https://github.com/TexasInstruments/mcal_am263px"
+  },
+  {
+    "full_name": "TexasInstruments/mcal_am261x",
+    "default_branch": "main",
+    "description": "Periodic MCAL package generated for AM261x",
+    "html_url": "https://github.com/TexasInstruments/mcal_am261x"
+  },
+  {
+    "full_name": "TexasInstruments/f29h85x-mcal",
+    "default_branch": "main",
+    "description": "Periodic MCAL package generated for F29H85x",
+    "html_url": "https://github.com/TexasInstruments/f29h85x-mcal"
+  },
+  {
+    "full_name": "TexasInstruments/Processor-SDK-TDA",
+    "default_branch": "main",
+    "description": "A comprehensive multi-OS software development kit, integrating RTOS, Linux, and QNX for high-performance Jacinto\u2122 processors in ADAS.",
+    "html_url": "https://github.com/TexasInstruments/Processor-SDK-TDA"
+  },
+  {
+    "full_name": "TexasInstruments/mspm33-sdk",
+    "default_branch": "main",
+    "description": "Repository for MSPM33 SDK ",
+    "html_url": "https://github.com/TexasInstruments/mspm33-sdk"
+  },
+  {
+    "full_name": "TexasInstruments/am13e2x_sdk",
+    "default_branch": "main",
+    "description": "MCU SDK for AM13E2x Devices",
+    "html_url": "https://github.com/TexasInstruments/am13e2x_sdk"
+  },
+  {
+    "full_name": "TexasInstruments/c7x_tisp",
+    "default_branch": "main",
+    "description": "TI signal-processing middleware library for the C7x DSP",
+    "html_url": "https://github.com/TexasInstruments/c7x_tisp"
+  },
+  {
+    "full_name": "TexasInstruments/pru-no-code-tool",
+    "default_branch": "main",
+    "description": "GUI tool for PRU assembly programming",
+    "html_url": "https://github.com/TexasInstruments/pru-no-code-tool"
+  },
+  {
+    "full_name": "TexasInstruments/am13x-hsp",
+    "default_branch": "main",
+    "description": "This repository contains TI's Embedded Coder Support Package for AM13x Microcontroller, enabling Model-Based Design workflows for real-time control applications",
+    "html_url": "https://github.com/TexasInstruments/am13x-hsp"
+  },
+  {
+    "full_name": "TexasInstruments/csmp-agent-lib",
+    "default_branch": "main_ti",
+    "description": "OpenCSMP: CiscoDevNet Opensource CSMP-Agent Library (Formerly CSMP-Agent)",
+    "html_url": "https://github.com/TexasInstruments/csmp-agent-lib"
+  },
+  {
+    "full_name": "TexasInstruments/TI-CyberShield-Toolkit",
+    "default_branch": "main",
+    "description": "TI CyberShield Toolkit",
+    "html_url": "https://github.com/TexasInstruments/TI-CyberShield-Toolkit"
+  },
+  {
+    "full_name": "TexasInstruments/c7x_mathlib",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/c7x_mathlib"
+  },
+  {
+    "full_name": "TexasInstruments/c7x_fftlib",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/c7x_fftlib"
+  },
+  {
+    "full_name": "TexasInstruments/c7x_dsplib",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/c7x_dsplib"
+  },
+  {
+    "full_name": "TexasInstruments/c7x_vxlib",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/c7x_vxlib"
+  },
+  {
+    "full_name": "TexasInstruments/c7x_audiolib",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/c7x_audiolib"
+  },
+  {
+    "full_name": "TexasInstruments/TPS929XXX-SALEAE-HLA-DESIGN-TOOL",
+    "default_branch": "main",
+    "description": "TPS929xxx-Q1 Saleae Logic2 High Level Analyzer (HLA). This repository does not accept GitHub pull requests or patches at this time.",
+    "html_url": "https://github.com/TexasInstruments/TPS929XXX-SALEAE-HLA-DESIGN-TOOL"
+  },
+  {
+    "full_name": "TexasInstruments/icss-emac-lld",
+    "default_branch": "next",
+    "description": "Ethernet (Low Level Driver) for PRU ICSS - Industrial Ethernet Subsystem ",
+    "html_url": "https://github.com/TexasInstruments/icss-emac-lld"
+  },
+  {
+    "full_name": "TexasInstruments/astra",
+    "default_branch": "master",
+    "description": "ASTRA (Automated System Test Robot Application) is an open-source framework built on Robot Framework for embedded hardware and software testing, built by Texas Instruments and maintained for the community.",
+    "html_url": "https://github.com/TexasInstruments/astra"
+  },
+  {
+    "full_name": "TexasInstruments/core-secdev-k3",
+    "default_branch": "master",
+    "description": "Development tools for High-Security(HS) TI processors. Security development package provided for CoreSDK for K3 platform devices.",
+    "html_url": "https://github.com/TexasInstruments/core-secdev-k3"
+  },
+  {
+    "full_name": "TexasInstruments/snagfactory-configs",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/snagfactory-configs"
+  },
+  {
+    "full_name": "TexasInstruments/ti-zephyr",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/ti-zephyr"
+  },
+  {
+    "full_name": "TexasInstruments/mcuboot",
+    "default_branch": "main",
+    "description": "Secure boot for 32-bit Microcontrollers!",
+    "html_url": "https://github.com/TexasInstruments/mcuboot"
+  },
+  {
+    "full_name": "TexasInstruments/sdk-ng",
+    "default_branch": "main",
+    "description": "Zephyr SDK (Toolchains, Development Tools)",
+    "html_url": "https://github.com/TexasInstruments/sdk-ng"
+  },
+  {
+    "full_name": "TexasInstruments/pru-simulator",
+    "default_branch": "main",
+    "description": "PRU simulator which has UI and MCP agent for development and test of PRU assembler code",
+    "html_url": "https://github.com/TexasInstruments/pru-simulator"
+  },
+  {
+    "full_name": "TexasInstruments/tinyml-modelzoo",
+    "default_branch": "main",
+    "description": "Texas Instruments' Modelzoo for Edge AI/ML on Microcontrollers",
+    "html_url": "https://github.com/TexasInstruments/tinyml-modelzoo"
+  },
+  {
+    "full_name": "TexasInstruments/sitara-open-source-talks",
+    "default_branch": "main",
+    "description": "Links to slides, webinars and videos of all open source presentations from TI engineers. ",
+    "html_url": "https://github.com/TexasInstruments/sitara-open-source-talks"
+  },
+  {
+    "full_name": "TexasInstruments/edgeai-modelhub",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/edgeai-modelhub"
+  },
+  {
+    "full_name": "TexasInstruments/collab",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/collab"
+  },
+  {
+    "full_name": "TexasInstruments/simplelink-trx-plugin",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments/simplelink-trx-plugin"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/ble_examples",
+    "default_branch": "master",
+    "description": "Additional examples to compliment TI's Bluetooth Low Energy Stack offerings.",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/ble_examples"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/tda4x-robotarm-demos",
+    "default_branch": "master",
+    "description": "Niryo robotic arm demo on the TDA4VM",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/tda4x-robotarm-demos"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/edgeai-gst-apps-human-pose",
+    "default_branch": "main",
+    "description": "Gstreamer based Edge AI reference application for Human Pose",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/edgeai-gst-apps-human-pose"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/edgeai-gst-apps-6d-pose",
+    "default_branch": "main",
+    "description": "Gstreamer based Edge AI reference application for 6D pose estimation",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/edgeai-gst-apps-6d-pose"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/edgeai-gst-apps-lpr",
+    "default_branch": "main",
+    "description": "Gstreamer based Edge AI reference application",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/edgeai-gst-apps-lpr"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/edgeai-gst-apps-retail-checkout",
+    "default_branch": "main",
+    "description": "Gstreamer based Edge AI reference application",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/edgeai-gst-apps-retail-checkout"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/edgeai-gst-apps-barcode-reader",
+    "default_branch": "main",
+    "description": "Gstreamer based Edge AI reference application",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/edgeai-gst-apps-barcode-reader"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/edgeai-gst-apps-defect-detection",
+    "default_branch": "main",
+    "description": "Gstreamer based Edge AI reference application",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/edgeai-gst-apps-defect-detection"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/edgeai-gst-apps-pcb-defect-detection",
+    "default_branch": "main",
+    "description": "Gstreamer based Edge AI reference application",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/edgeai-gst-apps-pcb-defect-detection"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/jacinto-picknplace-demo",
+    "default_branch": "master",
+    "description": "Pick-n-place demo on AM6xA devices",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/jacinto-picknplace-demo"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/edgeai-gst-apps-pick-n-place",
+    "default_branch": "main",
+    "description": "Gstreamer based Edge AI reference application",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/edgeai-gst-apps-pick-n-place"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/edgeai-demo-audio-visual",
+    "default_branch": "master",
+    "description": "A demonstration of AM6xA Edge AI SoCs for conferencing / audio-visual systems by running neural networks on streams of audio and video",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/edgeai-demo-audio-visual"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/edgeai-demo-monodepth-estimation",
+    "default_branch": "master",
+    "description": "Single camera depth estimation using MiDaS deep learning CNN and gstreamer image processing pipeline",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/edgeai-demo-monodepth-estimation"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/edgeai-gst-apps-people-tracking",
+    "default_branch": "main",
+    "description": "Gstreamer based Edge AI reference application",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/edgeai-gst-apps-people-tracking"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/.github",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments-Sandbox/.github"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/edgeai-vision-apps-lib-build",
+    "default_branch": "master",
+    "description": "This build system covers building vision-apps library from source for Ubuntu/Debian Docker container. Supporting target platforms: TDA4VM, AM62A, AM67A, AM68A, and AM69A",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/edgeai-vision-apps-lib-build"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/edgeai-osrt-libs-build",
+    "default_branch": "master",
+    "description": "This build system covers building open-source runtime (OSRT) libraries including ONNX-RT, TFLite-RT, NEO-AI-DLR, and TIDL runtime modules from source for Ubuntu/Debian Docker container. Supporting target platforms: TDA4VM, AM62A, AM67A, AM68A, and AM69A",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/edgeai-osrt-libs-build"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/edgeai-connectivity-demos",
+    "default_branch": "main",
+    "description": "Connectivity Demos",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/edgeai-connectivity-demos"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/ti-phase-light-modulator",
+    "default_branch": "main",
+    "description": "Easy TI PLM data formatting and phase processing in Python.",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/ti-phase-light-modulator"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/cc33xx-linux-mpu-ports",
+    "default_branch": "main",
+    "description": "The CC33XX LINUX MPU ports is a project meant to provide customers with a single place to find patches required to port the CC33XX-LINUX-MPU SDK to LTS kernels and other HW platforms(NXP, STMicro, AM62x, etc.) ",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/cc33xx-linux-mpu-ports"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/edgeai-rgb-ir-app-examples",
+    "default_branch": "main",
+    "description": "Supporting code and examples for application note \"Building a Driver and Occupancy Monitoring System with an RGB-IR Camera\" ",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/edgeai-rgb-ir-app-examples"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/edgeai-gst-apps-aibox",
+    "default_branch": "aibox",
+    "description": "Gstreamer based Edge AI reference application",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/edgeai-gst-apps-aibox"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/msp-cmsis-driver",
+    "default_branch": "main",
+    "description": "This package provides a CMSIS-Driver interface to peripherals on TI MSPM0 microcontrollers.",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/msp-cmsis-driver"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/HW-TADA",
+    "default_branch": "main",
+    "description": "Repository for the TADA (Test Automation Debug Adapter)",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/HW-TADA"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/ti-environmental-sensors",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments-Sandbox/ti-environmental-sensors"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/edgeai-gst-apps-radar-camera-fusion",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments-Sandbox/edgeai-gst-apps-radar-camera-fusion"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/KernelCi-collaboration",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments-Sandbox/KernelCi-collaboration"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/SimpleLink-Low-Power-F3-Demos",
+    "default_branch": "main",
+    "description": "Demos for the SimpleLink F3 SDK",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/SimpleLink-Low-Power-F3-Demos"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/edgeai-radarml-backend",
+    "default_branch": "main",
+    "description": "Radar's Edge AI Studio Extension Source Code",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/edgeai-radarml-backend"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/audioai-modelzoo",
+    "default_branch": "master",
+    "description": "Audio AI Model Zoo",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/audioai-modelzoo"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/OTP-WebTools",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments-Sandbox/OTP-WebTools"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/EVM-Explorer",
+    "default_branch": "main",
+    "description": "EVM Database Website hosted on Github Pages",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/EVM-Explorer"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/simplelink-wifi-demos",
+    "default_branch": "release/1.2",
+    "description": "Simplelink Wifi SDK Demos",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/simplelink-wifi-demos"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/SOM-Explorer",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments-Sandbox/SOM-Explorer"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/ti-edgeai-armbian-build",
+    "default_branch": "main",
+    "description": "Experimental Edgeai Armbain Package Builder",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/ti-edgeai-armbian-build"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/BeagleY-EdgeAI-Demos",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments-Sandbox/BeagleY-EdgeAI-Demos"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/tvm",
+    "default_branch": "relax-c7x-mma",
+    "description": "Fork of Apache TVM that adds a compiler backend and runtime for Texas Instruments' C7\u2122 NPU",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/tvm"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/IWRL6432WMOD-Host-Controller-Examples",
+    "default_branch": "main",
+    "description": "Host controller firmware that configures the IWRL6432WMOD mmWave radar module via SPI and responds to presence detection events. This repository does not accept GitHub pull requests or patches at this time.",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/IWRL6432WMOD-Host-Controller-Examples"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/wireless-next",
+    "default_branch": "main",
+    "description": null,
+    "html_url": "https://github.com/TexasInstruments-Sandbox/wireless-next"
+  },
+  {
+    "full_name": "TexasInstruments-Sandbox/sitara-edgai-time-series",
+    "default_branch": "main",
+    "description": "Edge AI demos for time series data on Sitara Devices.",
+    "html_url": "https://github.com/TexasInstruments-Sandbox/sitara-edgai-time-series"
+  }
+]

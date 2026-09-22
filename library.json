@@ -1,0 +1,14 @@
+{
+  "name": "TMP1x2",
+  "version": "1.0.0",
+  "description": "Framework-neutral TI TMP102/TMP112 temperature sensor driver with injected I2C, health tracking and diagnostic CLIs.",
+  "keywords": ["tmp102", "tmp112", "temperature", "sensor", "i2c", "arduino", "esp-idf"],
+  "authors": [{"name": "Thymos Solution s.r.o", "email": "info@thymos.cz", "url": "https://www.thymos.cz"}, {"name": "Jan Havelka", "maintainer": true}],
+  "license": "MIT",
+  "headers": ["TMP1x2/TMP1x2.h"],
+  "build": {"includeDir": "include", "srcDir": "src"},
+  "export": {
+    "include": ["include/**", "src/**", "examples/**", "library.json", "idf_component.yml", "CMakeLists.txt", "LICENSE", "README.md", "CHANGELOG.md", "docs/*.md", "docs/reference/README.md"],
+    "exclude": ["examples/**/build*/**", "examples/**/sdkconfig", "examples/**/sdkconfig.old", "examples/**/dependencies.lock", "examples/**/managed_components/**"]
+  }
+}

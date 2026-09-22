@@ -1,0 +1,30 @@
+[
+  {
+    "repository": "TexasInstruments/mspm0-sdk",
+    "path": "examples",
+    "sha": "b4ba4a775d5e92adb9dd16d9a694184acf5457a1",
+    "truncated": true,
+    "matches": []
+  },
+  {
+    "repository": "TexasInstruments/mspm0-sdk",
+    "path": "source",
+    "sha": "951aadbd280dc2f5a179a87d6a63fe896a2e9709",
+    "truncated": false,
+    "matches": []
+  },
+  {
+    "repository": "TexasInstruments/mcupsdk-core",
+    "path": "examples",
+    "sha": "78b2e04b0e0d3cb9c50198df414ceca55a899f72",
+    "truncated": false,
+    "matches": []
+  },
+  {
+    "repository": "TexasInstruments/mcupsdk-core",
+    "path": "source",
+    "sha": "b1e6195486bd3660db1ad713b07b6714121d6dcb",
+    "truncated": false,
+    "matches": []
+  }
+]

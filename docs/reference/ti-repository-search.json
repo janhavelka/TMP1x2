@@ -1,0 +1,75 @@
+[
+  {
+    "repository": "TexasInstruments/simplelink-lowpower-f2-sdk",
+    "branch": "main",
+    "sha": "3615ad5d3f4f271258d18a2f5ce1785064ff9a58",
+    "status": 200,
+    "truncated": false,
+    "matches": []
+  },
+  {
+    "repository": "TexasInstruments/simplelink-lowpower-f3-sdk",
+    "branch": "main",
+    "sha": "1819e96350cdea5b959be9082668a798633e70ce",
+    "status": 200,
+    "truncated": false,
+    "matches": []
+  },
+  {
+    "repository": "TexasInstruments/mspm0-sdk",
+    "branch": "main",
+    "sha": "20807db79aa17b49f87ab8ec87f6b6d63ee2cb32",
+    "status": 200,
+    "truncated": true,
+    "matches": []
+  },
+  {
+    "repository": "TexasInstruments-Sandbox/ti-environmental-sensors",
+    "branch": "main",
+    "sha": "8a6495f6814f2ba90aaa33309f0f6d0a197f84d3",
+    "status": 200,
+    "truncated": false,
+    "matches": []
+  },
+  {
+    "repository": "TexasInstruments/mcupsdk-core",
+    "branch": "next",
+    "sha": "6a622a5c2729c5ad10ba066646944609dc0c64bb",
+    "status": 200,
+    "truncated": true,
+    "matches": []
+  },
+  {
+    "repository": "TexasInstruments/ti-linux-kernel",
+    "branch": "ti-linux-6.18.y",
+    "sha": "fff856a50d43288671eaa733f9f59aa25f2fed77",
+    "status": 200,
+    "truncated": true,
+    "matches": [
+      {
+        "path": "Documentation/devicetree/bindings/hwmon/ti,tmp102.yaml",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "96b2e4969f78a1de8f531f64bc78f5414d1a8745",
+        "size": 1080,
+        "url": "https://api.github.com/repos/TexasInstruments/ti-linux-kernel/git/blobs/96b2e4969f78a1de8f531f64bc78f5414d1a8745"
+      },
+      {
+        "path": "Documentation/hwmon/tmp102.rst",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "b1f585531a88dab97f4d1f1530f0b7b4b9cac5a9",
+        "size": 938,
+        "url": "https://api.github.com/repos/TexasInstruments/ti-linux-kernel/git/blobs/b1f585531a88dab97f4d1f1530f0b7b4b9cac5a9"
+      },
+      {
+        "path": "drivers/hwmon/tmp102.c",
+        "mode": "100644",
+        "type": "blob",
+        "sha": "376e0eac8cc1c9d985e0afecce483a650f525d72",
+        "size": 8321,
+        "url": "https://api.github.com/repos/TexasInstruments/ti-linux-kernel/git/blobs/376e0eac8cc1c9d985e0afecce483a650f525d72"
+      }
+    ]
+  }
+]

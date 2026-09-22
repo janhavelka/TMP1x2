@@ -1,0 +1,2459 @@
+TMP112x High-Accuracy, Low-Power, Digital Temperature Sensors With SMBus and 
+Two-Wire Serial Interface in SOT563 and X2SON Packages
+1 Features
+• TMP112A accuracy without calibration:
+– ±0.5°C (maximum) from 0°C to +65°C (3.3V)
+– ±1.0°C (maximum) from –40°C to +125°C
+• TMP112B accuracy without calibration:
+– ±0.5°C (maximum) from 0°C to +65°C (1.8V)
+– ±1.0°C (maximum) from –40°C to +125°C
+• TMP112N accuracy without calibration:
+– ±1.0°C (maximum) from –40°C to +125°C
+• TMP112Dx accuracy without calibration:
+– ±0.5°C (maximum) from -25°C to 85°C (V+ ≥ 
+1.5V)
+– ±1.0°C (maximum) from –40°C to 125°C
+• SOT563 package (1.6mm × 1.6mm)
+• X2SON package (0.8mm × 0.8mm)
+• Low quiescent current:
+– 7.5-μA active (maximum), 0.35-μA shutdown 
+(maximum)
+• Supply range: 1.4V to 3.6V
+• Resolution: 12 Bits
+• Digital output: SMBus™, Two-Wire, and I2C 
+interface compatibility
+• NIST traceable
+2 Applications
+• Building automation
+– Occupancy detection
+– Video doorbell
+– HVAC: Wireless environmental sensor
+• Factory automation & control
+– Machine vision camera
+– Industrial PC: Single board computer
+– CPU (PLC controller)
+• Cold chain
+• Data center & enterprise computing
+– Solid state drive (SSD)
+– Rack Server Motherboard
+• Personal electronics
+– PC & notebooks, tablets
+– Digital still & video camera
+– Augmented reality glasses
+– Smart speakers
+3 Description
+The TMP112 family of devices are digital temperature 
+sensors designed for high-accuracy, low-power, 
+NTC/PTC thermistor replacements where high 
+accuracy is required. The TMP112A, TMP112B, 
+TMP112Dx offer 0.5°C accuracy and are optimized to 
+provide the best PSR performance for 3.3V, 1.8V and 
+≥1.5V operation respectively, while TMP112N offers 
+1°C accuracy. These temperature sensors are highly 
+linear and do not require complex calculations or 
+lookup tables to derive the temperature. The on-chip 
+12-bit ADC offers resolutions down to 0.0625°C.
+The 1.6mm × 1.6mm SOT563 package is 68% 
+smaller footprint than an SOT23 package while 
+TMP112Dx utilizes ultra-small (0.64mm 2) 5-pin 
+package. The TMP112 family features SMBus, two-
+wire and I 2C interface compatibility, and allows up to 
+four devices on one bus. The device also features 
+an SMBus alert function or variant. The device is 
+specified to operate over supply voltages from 1.4V 
+to 3.6V with the typical quiescent current 3.2µA over 
+the full operating range.
+The TMP112 family  is designed for extended 
+temperature measurement in communication, 
+computer, consumer, environmental, industrial, and 
+instrumentation applications. The device is specified 
+for operation over a temperature range of –40°C to 
+125°C.
+The TMP112 family  production units are 100% 
+tested against sensors that are NIST-traceable and 
+are verified with equipment that are NIST-traceable 
+through ISO/IEC 17025 accredited calibrations.
+Package Information
+PART NUMBER PACKAGE(1) PACKAGE SIZE(2)
+TMP112A/B/D/N SOT563 (6) 1.6mm × 1.6mm
+TMP112D/D0/D1/
+D2/D3 X2SON (5) 0.8mm × 0.8mm
+(1) For more information, see Section 11.
+(2) The package size (length × width) is a nominal value and 
+includes pins, where applicable.
+Diode
+T emp.
+Sensor
+/c68/c83
+A/D
+Converter
+OSC
+Control
+Logic
+Serial
+Interface
+Config.
+and□T emp.
+Register
+TMP112
+T emperature
+SCL 1
+3
+6
+4ALERT
+SDA
+GND 2 5 V+
+ADD0
+Block Diagram (SOT563 Package)
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+An IMPORTANT NOTICE at the end of this data sheet addresses availability, warranty, changes, use in safety-critical applications, 
+intellectual property matters and other important disclaimers. PRODUCTION DATA.
+
+Table of Contents
+1 Features............................................................................1
+2 Applications.....................................................................1
+3 Description.......................................................................1
+4 Device Comparison.........................................................3
+5 Pin Configuration and Functions...................................4
+6 Specifications.................................................................. 5
+6.1 Absolute Maximum Ratings........................................ 5
+6.2 ESD Ratings............................................................... 5
+6.3 Recommended Operating Conditions.........................5
+6.4 Thermal Information....................................................5
+6.5 Electrical Characteristics.............................................6
+6.6 Timing Requirements..................................................8
+6.7 Timing Diagrams ........................................................8
+6.8 Typical Characteristics (TMP112A/B/N)......................9
+6.9 Typical Characteristics (TMP112Dx).........................10
+7 Detailed Description......................................................13
+7.1 Overview...................................................................13
+7.2 Functional Block Diagrams....................................... 13
+7.3 Feature Description...................................................14
+7.4 Device Functional Modes..........................................21
+7.5 Programming ........................................................... 22
+8 Application and Implementation..................................26
+8.1 Application Information............................................. 26
+8.2 Typical Application ................................................... 27
+8.3 Layout....................................................................... 29
+9 Device and Documentation Support............................33
+9.1 Documentation Support ........................................... 33
+9.2 Receiving Notification of Documentation Updates....33
+9.3 Support Resources................................................... 33
+9.4 Trademarks...............................................................33
+9.5 Electrostatic Discharge Caution................................33
+9.6 Glossary....................................................................33
+10 Revision History.......................................................... 33
+11 Mechanical, Packaging, and Orderable 
+Information.................................................................... 35
+11.1 Tape and Reel Information...................................... 42
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+2 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+4 Device Comparison
+Table 4-1. Device Options
+Feature TMP102 TMP110 TMP112A TMP112B TMP112N TMP112Dx TMP1075N
+VDD Range (V) 1.4 - 3.6 1.14 - 5.5 1.4 - 3.6 1.4 - 3.6 1.4 - 3.6 1.4 - 3.6 1.62 - 3.6
+IAVG (μA)
+(Typ)
+3.2 @ 1Hz
+4.8 @ 4Hz 3.2 @ 1Hz 3.2 @ 1Hz
+4.8 @ 4Hz
+3.2 @ 1Hz
+4.8 @ 4Hz
+3.2 @ 1Hz
+4.8 @ 4Hz
+3.2 @ 1Hz
+4.8 @ 4Hz 4.8 @ 4Hz
+IQ_ACTIVE (μA)
+(Typ) 55 55 55 55 55 55 -
+ISB (μA) 2.6 2.6 2.6 2.6 2.6 2.6 -
+ISD (μA) 0.15 0.15 0.15 0.15 0.15 0.15 0.15
+Conversion
+Time (ms) 10 10 10 10 10 10 10
+Accuracy
+0°C to 65°C 
+(max) - - ±0.5 @ 3.3V ±0.5 @ 1.8V - - -
+-10°C to 65°C 
+(max) - - - - - - ±1
+-25°C to 85°C 
+(max) ±2 - - - - ±0.5 @ ≥1.5V -
+-40°C to 125°C 
+(max) ±3 ±1 ±1 ±1 ±1 ±1 ±2
+Packaging
+Dimensions 
+[mm × mm × 
+mm]
+SOT563-6
+[1.6 × 1.6 × 0.6]
+X2SON-5
+[0.8 × 0.8 × 0.4]
+SOT563-6
+[1.6 × 1.6 × 0.6]
+X2SON-5
+[0.8 × 0.8 × 0.4]
+SOT563-6
+[1.6 × 1.6 × 0.6]
+SOT563-6
+[1.6 × 1.6 × 0.6]
+Features
+Address # 4 4 4 4 4 4 4
+Address & 
+Alert 
+Programming
+Address + Alert Address or Alert Address + Alert Address or Alert
+Address + Alert Address + Alert
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 3
+Product Folder Links: TMP112 TMP112D
+
+5 Pin Configuration and Functions
+1GND
+2SCL
+3
+ADD0
+4 SDA
+5 V+
+Not to scale
+DPW Package
+5-Pin X2SON
+TMP112D
+(Top View)
+1GND
+2SCL
+3
+ALERT
+4 SDA
+5 V+
+Not to scale
+DPW Package
+5-Pin X2SON
+TMP112D0/D1/D2/D3
+(Top View)
+1
+2
+3
+6
+5
+4
+SDA
+V+
+ADD0
+SCL
+GND
+ALERT
+OBS
+DRL Package
+6-Pin SOT563
+TMP112A/B/D/N
+(Top View)
+Table 5-1. Pin Function
+PIN
+Type(1) DESCRIPTION
+NAME
+DRL 
+Package DPW Package
+NO.
+TMP112A/
+B/D/N
+NO.
+TMP112D
+NO.
+TMP112D0
+/1/2/3
+SCL 1 2 2 I Serial clock
+GND 2 1 1 — Ground
+Pin-1 has curved edges in TMP112Dx.
+ALERT 3 - 3 O Overtemperature alert. Open-drain output; requires a pullup resistor.
+Note: Connecting to GND if Alert pin is not used is preferred.
+ADD0 4 3 - I Address Select. Connect to V+, GND, SDA or SCL
+V+ 5 5 5 I Supply voltage, 1.4 V to 3.6 V
+SDA 6 4 4 I/O Serial data. Open-drain output; requires a pullup resistor.
+(1) I = Input; O = Output, I/O = Input or Output
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+4 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+6 Specifications
+6.1 Absolute Maximum Ratings
+Over free-air temperature range unless otherwise noted(1)
+MIN MAX UNIT
+Supply voltage (V+) 4 V
+Voltage at SCL, ADD0, and SDA –0.5 4 V
+Voltage at ALERT ((V+) + 0.3) 
+and ≤ 4 V
+Output current ±10 mA
+Operating temperature –55 150 °C
+Junction temperature, TJ 150 °C
+Storage temperature, Tstg –60 150 °C
+(1) Operation outside the Absolute Maximum Ratings may cause permanent device damage. Absolute Maximum Ratings do not imply 
+functional operation of the device at these or any other conditions beyond those listed under Recommended Operating Conditions. 
+If used outside the Recommended Operating Conditions but within the Absolute Maximum Ratings, the device may not be fully 
+functional, and this may affect device reliability, functionality, performance, and shorten the device lifetime.
+6.2 ESD Ratings
+VALUE UNIT
+V(ESD) Electrostatic discharge
+Human-body model (HBM), per ANSI/ESDA/JEDEC JS-001(1) ±2000
+VCharged-device model (CDM), per JEDEC specification JESD22-
+C101(2) ±1000
+(1) JEDEC document JEP155 states that 500V HBM allows safe manufacturing with a standard ESD control process.
+(2) JEDEC document JEP157 states that 250- CDM allows safe manufacturing with a standard ESD control process.
+6.3 Recommended Operating Conditions
+over operating free-air temperature range (unless otherwise noted)
+MIN NOM MAX UNIT
+V+ Supply voltage 1.4 3.3 3.6 V
+TA Operating free-air temperature –40 125 °C
+6.4 Thermal Information
+THERMAL METRIC(1)
+TMP112A/B/D/N TMP112Dx
+UNITDRL (SOT563) DPW (X2SON)
+6 PINS 5 PINS
+RθJA Junction-to-ambient thermal resistance 240.2 230 °C/W
+RθJC(top) Junction-to-case (top) thermal resistance 96.4 194 °C/W
+RθJB Junction-to-board thermal resistance 124.3 158.4 °C/W
+ψJT Junction-to-top characterization parameter 4.0 20 °C/W
+ψJB Junction-to-board characterization parameter 123.1 158.3 °C/W
+RθJC(bot) Junction-to-case (bottom) thermal resistance N/A 108.4 °C/W
+MT Thermal Mass 1.97 0.46 mJ/°C
+(1) For more information about traditional and new thermal metrics, see the Semiconductor and IC Package Thermal Metrics application 
+note.
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 5
+Product Folder Links: TMP112 TMP112D
+
+6.5 Electrical Characteristics
+At TA = 25°C and V+ = 1.4V to 3.6V, unless otherwise noted
+PARAMETER TEST CONDITIONS MIN TYP MAX UNIT
+TEMPERATURE SENSOR
+Temperature range –40 125 °C
+Accuracy (temperature 
+error)
+TMP112A
+25°C, V+ = 3.3V ± 0.1 ± 0.5
+°C
+0°C to +65°C, V+ = 3.3V ± 0.25 ± 0.5
+–40°C to +125°C ± 0.5 ± 1
+TMP112B
+25°C, V+ = 1.8V ± 0.1 ± 0.5
+0°C to +65°C, V+ = 1.8V ± 0.25 ± 0.5
+–40°C to +125°C ± 0.5 ± 1
+TMP112Dx
+25°C ± 0.1 ± 0.5
+-25°C to +85°C, V+ ≥ 1.5V ± 0.25 ± 0.5
+–40°C to +125°C ± 0.5 ± 1
+TMP112N –40°C to +125°C ± 1
+DC power-supply sensitivity –40°C to +125°C 0.0625 ± 0.25 °C/V
+Long-term drift(1)
+TMP112A/B/D/N
+(DRL package)
+3000 hours at 125°C
+±0.0625
+°C
+TMP112Dx
+(DPW package) ±0.125
+Resolution (LSB) 0.0625 °C
+DIGITAL INPUT/OUTPUT
+Input capacitance 3 pF
+VIH
+Input logic level
+0.7×(V+) 3.6
+V
+VIL –0.5 0.3×(V+)
+IIN Input current
+TMP112A/B/N
+0 < VIN < 3.6V
+1
+µA
+TMP112Dx 0.1
+VOL SDA
+Input current
+V+ > 2 V, IOL = 3mA 0 0.4
+V
+V+ < 2 V, IOL = 3mA 0 0.2×(V+)
+VOL 
+ALERT
+V+ > 2 V, IOL = 3mA 0 0.4
+V+ < 2 V, IOL = 3mA 0 0.2×(V+)
+Resolution 12 Bits
+Conversion time 10.25 11.25 ms
+Conversion modes
+CR1 = 0, CR0 = 0 0.25
+Conv/s
+CR1 = 0, CR0 = 1 1
+CR1 = 1, CR0 = 0 (default) 4
+CR1 = 1, CR0 = 1 8
+Timeout time (SCL = GND or SDA = GND) 30 40 ms
+POWER SUPPLY
+Operating supply range 1.4 3.6 V
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+6 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+At TA = 25°C and V+ = 1.4V to 3.6V, unless otherwise noted
+PARAMETER TEST CONDITIONS MIN TYP MAX UNIT
+IQ Average quiescent current 
+Serial bus inactive, CR1 = 
+0, CR0 = 1 3.2 5
+µA
+Serial bus inactive, CR1 = 
+1, CR0 = 0 (default) 4.8 7.5
+Serial bus active, SCL 
+frequency = 400kHz 10
+Serial bus active, SCL 
+frequency = 1MHz 18
+Serial bus active, SCL 
+frequency = 2.85 MHz 40
+ISD Shutdown current 
+Serial bus inactive 0.15 0.35
+µA
+Serial bus active, SCL 
+frequency = 400kHz 5.5
+Serial bus active, SCL 
+frequency = 1MHz 13
+Serial bus active, SCL 
+frequency = 2.85MHz 35
+(1) Long-term drift is determined using accelerated operational life testing at a junction temperature of 150°C for 1000 hours.
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 7
+Product Folder Links: TMP112 TMP112D
+
+6.6 Timing Requirements
+See the Two-Wire Timing Diagrams section for timing diagrams.
+FAST MODE FAST MODE PLUS HIGH-SPEED MODE
+UNIT
+MIN MAX MIN MAX MIN MAX
+f(SCL) SCL operating frequency 0.001 0.4 0.001 1 0.001 2.85 MHz
+t(BUF)
+Bus-free time between 
+STOP and START 
+conditions
+600 – 500 160 – ns
+t(HDSTA)
+Hold time after repeated 
+START condition.
+After this period, the first 
+clock is generated.
+600 – 260 160 – ns
+t(SUSTA)
+Repeated START condition 
+setup time 600 – 260 160 – ns
+t(SUSTO) STOP condition setup time 600 – 260 160 – ns
+t(HDDAT) Data hold time 100 900 12 150 25 105 ns
+t(SUDAT) Data setup time 100 – 50 25 – ns
+t(LOW) SCL clock low period V+ 1300 – 500 210 – ns
+t(HIGH) SCL clock high period 600 – 260 60 – ns
+tFD Data fall time – 300 120 – 80 ns
+tRD Data rise time
+– 300 – 120 – – ns
+SCLK ≤ 100kHz – 1000 – - – – ns
+tFC Clock fall time – 300 – 120 – 40 ns
+tRC Clock rise time – 300 – 120 – 40 ns
+6.7 Timing Diagrams
+SCL
+SDA
+t(LOW)
+tRC
+tFC t(HDSTA)
+t(HDSTA)
+t(HDDAT) t(SUDAT)
+t(HIGH) t(SUSTA) t(SUSTO)
+t(BUF)
+S SP P
+tRD tFD
+Figure 6-1. Two-Wire Timing Diagram
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+8 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+6.8 Typical Characteristics (TMP112A/B/N)
+At TA = 25°C and V+ = 3.3 V, unless otherwise noted.
+Temperature Error (qC)
+Population
+-0.35
+-0.3
+-0.25
+-0.2
+-0.15
+-0.1
+-0.05
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+0.35
+0
+5
+10
+15
+20
+25
+30
+D001
+Figure 6-2. Temperature Error at 25°C
+/c450.250/c450.225/c450.200/c450.175/c450.150/c450.125/c450.100/c450.075/c450.050/c450.025
+0
+0.025 0.050 0.075 0.100 0.125 0.150 0.175 0.200 0.225 0.250
+Accuracy□vs□Supply□( C/V)/c176
+Population Figure 6-3. Accuracy vs Supply
+Temperature (qC)
+Temperature Error (qC)
+-60 -40 -20 0 20 40 60 80 100 120 140
+-1
+-0.8
+-0.6
+-0.4
+-0.2
+0
+0.2
+0.4
+0.6
+0.8
+1
+D002
+Mean
+Mean + 3 V
+Mean  3 V
+Figure 6-4. Temperature Error vs Temperature
+T e m p e r a t u r e  (
+
+C )
+IQ(A)
+- 6 0 - 4 0 - 2 0 0 2 0 4 0 6 0 8 0 1 0 0 1 2 0 1 4 0 1 6 0
+4
+4 . 5
+5
+5 . 5
+6
+6 . 5
+7
+7 . 5
+8
+8 . 5
+1 . 4 V  S u p p l y
+3 . 6 V  S u p p l y Figure 6-5. Average Quiescent Current vs 
+Temperature 
+T e m p e r a t u r e  (
+
+C )
+ISD(nA)
+- 6 0 - 4 0 - 2 0 0 2 0 4 0 6 0 8 0 1 0 0 1 2 0 1 4 0 1 6 0
+0
+5 0 0
+1 , 0 0 0
+1 , 5 0 0
+2 , 0 0 0
+2 , 5 0 0
+3 , 0 0 0
+1 . 4 V  S u p p l y
+3 . 6 V  S u p p l y
+Figure 6-6. Shutdown Current vs Temperature
+B u s  F r e q u e n c y  ( H z )
+IQ(A)
+1 x 1 0
+3
+1 x 1 0
+4
+1 x 1 0
+5
+1 x 1 0
+6
+1 x 1 0
+7
+0 . 0
+5 . 0
+1 0 . 0
+1 5 . 0
+2 0 . 0
+2 5 . 0
+3 0 . 0
+3 5 . 0
+4 0 . 0
+4 5 . 0
+5 0 . 0
+- 5 5
+
+C
++ 2 5
+
+C
++ 1 2 5
+
+C Figure 6-7. Quiescent Current vs Bus Frequency 
+(Temperature at 3.3-V Supply)
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 9
+Product Folder Links: TMP112 TMP112D
+
+T e m p e r a t u r e  (
+
+C )
+Conversion Time (ms)
+- 6 0 - 4 0 - 2 0 0 2 0 4 0 6 0 8 0 1 0 0 1 2 0 1 4 0 1 6 0
+5
+6
+7
+8
+9
+1 0
+1 1
+1 2
+1 3
+1 4
+1 5
+1 . 4 V  S u p p l y
+3 . 6 V  S u p p l y
+Figure 6-8. Conversion Time vs Temperature
+6.9 Typical Characteristics (TMP112Dx)
+at TA = 25°C and V+ = 3.3 V (unless otherwise noted)
+T e m p e r a t u r e  (
+
+C )
+Temperature Error (
+
+C)
+- 4 0 - 2 0 0 2 0 4 0 6 0 8 0 1 0 0 1 2 0
+- 1 . 2
+- 1
+- 0 . 8
+- 0 . 6
+- 0 . 4
+- 0 . 2
+0
+0 . 2
+0 . 4
+0 . 6
+0 . 8
+1
+1 . 2
+T M P 1 1 2 D x  m i n
+T M P 1 1 2 D x  M a x
+A v e r a g e
+A v e r a g e  + 3 
+A v e r a g e  - 3 
+Figure 6-9. Temperature Error vs Temperature
+S u p p l y  V o l t a g e  ( V )
+Temperature Error (
+
+C)
+1 . 4 1 . 6 1 . 8 2 2 . 2 2 . 4 2 . 6 2 . 8 3 3 . 2 3 . 4 3 . 6
+- 1
+- 0 . 8
+- 0 . 6
+- 0 . 4
+- 0 . 2
+0
+0 . 2
+0 . 4
+0 . 6
+0 . 8
+1
+T A  =  - 4 0
+
+C
+T A  =  2 5
+
+C
+T A  =  1 2 5
+
+C Figure 6-10. Temperature Error vs Supply Voltage
+S u p p l y  V o l t a g e  ( V )
+Shutdown Current (nA)
+1 . 4 1 . 6 1 . 8 2 2 . 2 2 . 4 2 . 6 2 . 8 3 3 . 2 3 . 4 3 . 6
+0
+1 5 0
+3 0 0
+4 5 0
+6 0 0
+7 5 0
+9 0 0
+1 , 0 5 0
+1 , 2 0 0
+1 , 3 5 0
+T A =  - 4 0
+
+C
+T A =  2 5
+
+C
+T A =  1 2 5
+
+C
+Figure 6-11. Shutdown Current vs Supply Voltage
+Four conversions per second (continuous conversion mode)
+T e m p e r a t u r e  (
+
+C )
+Average Current (A)
+- 4 0 - 2 0 0 2 0 4 0 6 0 8 0 1 0 0 1 2 0
+4
+4 . 5
+5
+5 . 5
+6
+6 . 5
+V +  =  1 . 4 V
+V +  =  1 . 8 V
+V +  =  2 . 5 V
+V +  =  3 . 3 V
+V +  =  3 . 6 V
+Figure 6-12. Average Quiescent Current vs Temperature
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+10 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+6.9 Typical Characteristics (TMP112Dx) (continued)
+at TA = 25°C and V+ = 3.3 V (unless otherwise noted)
+T e m p e r a t u r e  (
+
+C )
+Active Current (A)
+- 4 0 - 2 0 0 2 0 4 0 6 0 8 0 1 0 0 1 2 0
+4 0
+4 5
+5 0
+5 5
+6 0
+6 5
+7 0
+7 5
+V +  =  1 . 4 V
+V +  =  1 . 8 V
+V +  =  2 . 5 V
+V +  =  3 . 3 V
+V +  =  3 . 6 V
+Figure 6-13. Active Conversion Current vs Temperature
+T e m p e r a t u r e  (
+
+C )
+Shutdown Current (nA)
+- 4 0 - 2 0 0 2 0 4 0 6 0 8 0 1 0 0 1 2 0
+0
+2 0 0
+4 0 0
+6 0 0
+8 0 0
+1 , 0 0 0
+V +  =  1 . 4 V
+V +  =  1 . 8 V
+V +  =  2 . 5 V
+V +  =  3 . 3 V
+V +  =  3 . 6 V Figure 6-14. Shutdown Current vs Temperature
+T e m p e r a t u r e  (
+
+C )
+Standby Current (A)
+- 4 0 - 2 0 0 2 0 4 0 6 0 8 0 1 0 0 1 2 0
+2 . 4
+2 . 6
+2 . 8
+3
+3 . 2
+3 . 4
+3 . 6
+V +  =  1 . 4 V
+V +  =  1 . 8 V
+V +  =  2 . 5 V
+V +  =  3 . 3 V
+V +  =  3 . 6 V
+Figure 6-15. Standby Current vs Temperature
+B u s  F r e q u e n c y  ( H z )
+Shutdown Current (A)
+1 0
+3
+1 0
+4
+1 0
+5
+1 0
+6
+5 x 1 0
+6
+0
+5
+1 0
+1 5
+2 0
+2 5
+3 0
+3 5
+4 0
+T A =  - 4 0
+
+C  a n d  2 5
+
+C
+T A =  - 4 0
+
+C
+T A =  2 5
+
+C
+T A =  1 2 5
+
+C Figure 6-16. Shutdown Current vs Bus Frequency (Temperature 
+at 3.3-V Supply)
+T e m p e r a t u r e  (
+
+C )
+Conversion Time (ms)
+- 4 0 - 2 0 0 2 0 4 0 6 0 8 0 1 0 0 1 2 0
+1 0
+1 0 . 1
+1 0 . 2
+1 0 . 3
+1 0 . 4
+1 0 . 5
+1 0 . 6
+1 0 . 7
+1 0 . 8
+1 0 . 9
+1 1
+V +  =  1 . 4 V
+V +  =  1 . 8 V
+V +  =  2 . 5 V
+V +  =  3 . 3 V
+V +  =  3 . 6 V
+Figure 6-17. Conversion Time vs Temperature
+T e m e p e r a t u r e  (
+
+C )
+Average IQ(A)
+- 4 0 - 2 0 0 2 0 4 0 6 0 8 0 1 0 0 1 2 0
+2
+4
+6
+8
+1 0
+8  C o n v / s
+4  C o n v / s
+1  C o n v / s
+0 . 2 5  C o n v / s Figure 6-18. Average Supply Current vs Conversion Rate
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 11
+Product Folder Links: TMP112 TMP112D
+
+6.9 Typical Characteristics (TMP112Dx) (continued)
+at TA = 25°C and V+ = 3.3 V (unless otherwise noted)
+T e m p e r a t u r e  E r r o r  ( m
+
+C )
+Population (%)
+- 2 5 0 - 2 0 0 - 1 5 0 - 1 0 0 - 5 0 0 5 0 1 0 0 1 5 0 2 0 0 2 5 0
+0
+1 0
+2 0
+3 0
+4 0
+5 0
+6 0
+7 0
+Figure 6-19. Temperature Error at 25 °C
+T e m p e r a t u r e  (
+
+C )
+Sampling Time Variation (%)
+- 4 0 - 2 0 0 2 0 4 0 6 0 8 0 1 0 0 1 2 0
+- 3
+- 2
+- 1
+0
+1
+2
+3
+V +  =  1 . 4 V
+V +  =  1 . 8 V
+V +  =  2 . 5 V
+V +  =  3 . 3 V
+V +  =  3 . 6 V Figure 6-20. Sampling Time vs Temperature
+I O U T ( m A )
+VOUT(V)
+0 . 5 1 1 . 5 2 2 . 5 3 3 . 5 4 4 . 5 5
+0
+0 . 0 5
+0 . 1
+0 . 1 5
+0 . 2
+0 . 2 5
+0 . 3
+0 . 3 5
+0 . 4
+0 . 4 5
+0 . 5
+V +  =  1 . 4 V
+V +  =  1 . 8 V
+V +  =  2 . 5 V
+V +  =  3 . 3 V
+V +  =  3 . 6 V
+Figure 6-21. ALERT Pin Output Voltage vs Pin Sink Current
+N o i s e  ( L S B )
+Population (%)
+- 2 - 1 0 1 2 3
+0
+2 0
+4 0
+6 0
+8 0
+1 0 0
+T A =  - 4 0
+
+C
+T A =  2 5
+
+C
+T A =  1 2 5
+
+C Figure 6-22. Noise Histogram (Oil bath measurement)
+V I N /  V +  ( % )
+Supply Current (A)
+0 1 0 2 0 3 0 4 0 5 0 6 0 7 0 8 0 9 0 1 0 0
+0
+2 0
+4 0
+6 0
+8 0
+1 0 0
+1 2 0
+1 4 0
+V +  =  1 . 4 V
+V +  =  1 . 8 V
+V +  =  2 . 5 V
+V +  =  3 . 3 V
+V +  =  3 . 6 V
+Figure 6-23. Supply Current vs Input Cell Input Voltage
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+12 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+7 Detailed Description
+7.1 Overview
+The TMP112 family of devices are digital temperature sensors that are designed for thermal-management 
+and thermal-protection applications. The TMP112 family is two-wire, SMBus, and I 2C interface-compatible. The 
+device is specified over an operating temperature range of –40°C to 125°C. Figure 7-1 and Figure 7-2 show 
+block diagrams of the TMP112 family. Figure 7-3 shows the ESD protection circuitries contained in the TMP112 
+family.
+The temperature sensor in the TMP112 family is the chip. Thermal paths run through the package leads as 
+well as the plastic package. The package leads provide the primary thermal path because of the lower thermal 
+resistance of the metal.
+An alternative version of the TMP112 family is available. The TMP102 device has reduced accuracy, the same 
+micro-package, and is pin-to-pin compatible.
+Table 7-1. Advantages of TMP112 Family Versus TMP102 and TMP110
+DEVICE COMPATIBLE 
+INTERFACES PACKAGE
+SUPPLY 
+CURRENT 
+(Typ)
+SUPPLY 
+VOLTAGE 
+(MIN)
+SUPPLY 
+VOLTAGE 
+(MAX)
+RESOLUTION LOCAL SENSOR 
+ACCURACY (MAX)
+SPECIFIED 
+CALIBRATION 
+DRIFT SLOPE
+TMP112A/B/
+N
+I2C
+SMBus
+SOT563
+1.6 × 1.6 × 0.6
+4.8µA
+(at 4-Hz)
+3.2µA
+(at 1-Hz)
+1.4 V 3.6 V 12 Bit
+0.0625°C
+±0.5°C: (0°C to 65°C)
+±1°C: (-40°C to 125°C) Yes
+TMP112D/D
+0/D1/D2/D3
+I2C
+SMBus
+SOT563
+1.6 × 1.6 × 0.6
+X2SON
+0.8 × 0.8 × 0.4
+4.8µA
+(at 4-Hz)
+3.2µA
+(at 1-Hz)
+1.4 V 3.6 V 12 Bit
+0.0625°C
+±0.5°C: (-25°C to 85°C)
+±1°C: (-40°C to 125°C) Yes
+TMP110 I2C
+SMBus
+X2SON
+0.8 × 0.8 × 0.4
+3.2µA
+(at 1-Hz) 1.14 V 5.5 V 12 Bit
+0.0625°C ±1°C: (-40°C to 125°C) Yes
+TMP102 I2C
+SMBus
+SOT563
+1.6 × 1.6 × 0.6
+4.8µA
+(at 4-Hz)
+3.2µA
+(at 1-Hz)
+1.4 V 3.6 V 12 Bit
+0.0625°C
+±2°C: (25°C to 85°C)
+±3°C: (-40°C to 125°C) No
+7.2 Functional Block Diagrams
+Diode
+T emp.
+Sensor
+/c68/c83
+A/D
+Converter
+OSC
+Control
+Logic
+Serial
+Interface
+Config.
+and□T emp.
+Register
+TMP112
+T emperature
+SCL 1
+3
+6
+4ALERT
+SDA
+GND 2 5 V+
+ADD0
+Figure 7-1. Internal Block Diagram (SOT563-6 
+Package)
+Diode
+Temp.
+Sensor
+  
+A/D
+Converter
+OSC
+Control
+Logic
+Serial
+Interface
+Config.
+and Temp.
+Register
+5 V+1GND
+4 SDA2SCL
+ALERT/
+ADD0
+3
+TMP112Dx
+Figure 7-2. Internal Block Diagram (X2SON-5 
+Package)
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 13
+Product Folder Links: TMP112 TMP112D
+
+ALERT
+Core
+SCL
+GND
+V+
+A0
+V+
+SDA
+TMP112
+Figure 7-3. Equivalent Internal ESD Circuitry (SOT563-6 Package)
+7.3 Feature Description
+7.3.1 Digital Temperature Output
+The digital output from each temperature measurement conversion is stored in the read-only temperature 
+register. The temperature register of the TMP112 family is configured as a 12-bit read-only register (setting the 
+EM bit to 0 in the configuration register; see Section 7.5.3.7 ), or as a 13-bit read-only register (setting the EM 
+bit to 1 in the configuration register) that stores the output of the most recent conversion. Two bytes must be 
+read to obtain data and are listed in Table 7-8 and Table 7-9. Byte 1 is the most significant byte (MSB), followed 
+by byte 2, the least significant byte (LSB). The first 12 bits (13 bits in extended mode) are used to indicate 
+temperature. The least significant byte does not have to be read if that information is not needed. The data 
+format for temperature is listed in Table 7-2 and Table 7-3. One LSB equals 0.0625°C. Negative numbers are 
+represented in binary twos complement format. Following power up or reset, the temperature register reads 0°C 
+until the first conversion is complete. Bit D0 of byte 2 indicates normal mode (EM bit equals 0) or extended 
+mode (EM bit equals 1), and can be used to distinguish between the two temperature register data formats. The 
+unused bits in the temperature register always read 0.
+Table 7-2. 12-Bit Temperature Data Format 
+TEMPERATURE (°C) DIGITAL OUTPUT (BINARY) HEX
+128 0111 1111 1111 7FF
+127.9375 0111 1111 1111 7FF
+100 0110 0100 0000 640
+80 0101 0000 0000 500
+75 0100 1011 0000 4B0
+50 0011 0010 0000 320
+25 0001 1001 0000 190
+0.25 0000 0000 0100 004
+0.0625 0000 0000 0001 001
+0 0000 0000 0000 000
+-0.0625 1111 1111 1111 FFF
+–0.25 1111 1111 1100 FFC
+–25 1110 0111 0000 E70
+–55 1100 1001 0000 C90
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+14 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+Table 7-2 does not list all temperatures. Use the following rules to obtain the digital data format for a given 
+temperature or the temperature for a given digital data format.
+To convert positive temperatures to a digital data format:
+1. Divide the temperature by the resolution
+2. Convert the result to binary code with a 12-bit, left-justified format, and MSB = 0 to denote a positive sign.
+Example: (50°C) / (0.0625°C / LSB) = 800 = 320h = 0011 0010 0000
+To convert a positive digital data format to temperature:
+1. Convert the 12-bit, left-justified binary temperature result, with the MSB = 0 to denote a positive sign, to a 
+decimal number.
+2. Multiply the decimal number by the resolution to obtain the positive temperature.
+Example: 0011 0010 0000 = 320h = 800 × (0.0625°C / LSB) = 50°C
+To convert negative temperatures to a digital data format:
+1. Divide the absolute value of the temperature by the resolution, and convert the result to binary code with a 
+12-bit, left-justified format.
+2. Generate the twos complement of the result by complementing the binary number and adding one. Denote a 
+negative number with MSB = 1.
+Example: (|–25°C|) / (0.0625°C / LSB) = 400 = 190h = 0001 1001 0000
+Two's complement format: 1110 0110 1111 + 1 = 1110 0111 0000
+To convert a negative digital data format to temperature:
+1. Generate the twos compliment of the 12-bit, left-justified binary number of the temperature result (with 
+MSB = 1, denoting negative temperature result) by complementing the binary number and adding one. This 
+represents the binary number of the absolute value of the temperature.
+2. Convert to decimal number and multiply by the resolution to get the absolute temperature, then multiply by 
+–1 for the negative sign.
+Example: 1110 0111 0000 has twos compliment of 0001 1001 0000 = 0001 1000 1111 + 1
+Convert to temperature: 0001 1001 0000 = 190h = 400; 400 × (0.0625°C / LSB) = 25°C = (|–25°C|); (|–
+25°C|) × (–1) = –25°C
+Table 7-3. 13-Bit Temperature Data Format
+TEMPERATURE (°C) DIGITAL OUTPUT (BINARY) HEX
+150 0 1001 0110 0000 0960
+128 0 1000 0000 0000 0800
+127.9375 0 0111 1111 1111 07FF
+100 0 0110 0100 0000 0640
+80 0 0101 0000 0000 0500
+75 0 0100 1011 0000 04B0
+50 0 0011 0010 0000 0320
+25 0 0001 1001 0000 0190
+0.25 0 0000 0000 0100 0004
+0.0625 0 0000 0000 0001 0001
+0 0 0000 0000 0000 0000
+-0.0625 1 1111 1111 1111 1FFF
+–0.25 1 1111 1111 1100 1FFC
+–25 1 1110 0111 0000 1E70
+–55 1 1100 1001 0000 1C90
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 15
+Product Folder Links: TMP112 TMP112D
+
+7.3.2 Serial Interface
+The TMP112 family operates as a target device only on the SMBus, two-wire, and I 2C interface-compatible bus. 
+Connections to the bus are made through the open-drain I/O lines, SDA and SCL. The SDA and SCL pins 
+feature integrated spike suppression filters and Schmitt triggers to minimize the effects of input spikes and bus 
+noise. The TMP112 family supports the transmission protocol for fast (1 kHz to 400 kHz), fast-plus (1 kHz to 1 
+MHz) and high-speed (1 kHz to 2.85 MHz) modes. All data bytes are transmitted MSB first.
+7.3.2.1 Bus Overview
+The device that initiates the transfer is called a controller, and the devices controlled by the controller are targets. 
+The bus must be controlled by a controller device that generates the serial clock (SCL), controls the bus access, 
+and generates the START and STOP conditions.
+To address a specific device, a START condition is initiated, indicated by pulling the data-line (SDA) from a high- 
+to low-logic level when the SCL pin is high. All targets on the bus shift in the target address byte on the rising 
+edge of the clock, with the last bit indicating whether a read or write operation is intended. During the ninth clock 
+pulse, the target being addressed responds to the controller by generating an acknowledge and pulling the SDA 
+pin low.
+A data transfer is then initiated and sent over eight clock pulses followed by an acknowledge bit. During the data 
+transfer the SDA pin must remain stable when the SCL pin is high, because any change in the SDA pin when the 
+SCL pin is high is interpreted as a START or STOP signal.
+When all data have been transferred, the controller generates a STOP condition indicated by pulling the SDA pin 
+from low to high when the SCL pin is high.
+7.3.2.2 Serial Bus Address
+To communicate with the device, the controller must first address target devices through a target-address byte. 
+The target-address byte consists of seven address bits and a direction bit indicating the intent of executing a 
+read or write operation.
+The TMP112 family features an address pin to allow up to four devices to be addressed on a single bus. Table 
+7-4 describes the pin logic levels used to properly connect up to four devices. This table also describes four 
+different address options available when ALERT pin is used in TMP112Dx.
+Table 7-4. Address and Alert Variant Device Target Address
+DEVICE ORDERABLE ADD0 PIN CONNECTION DEVICE I2C BUS 
+ADDRESS
+DEVICE I2C BUS 
+ADDRESS (Hex)
+Address Variant Only
+(X2SON-5 package) TMP112D
+GND 1000000 40h
+V+ 1000001 41h
+SDA 1000010 42h
+SCL 1000011 43h
+Alert Variant Only
+(X2SON-5 package)
+TMP112D0
+N/A
+1001000 48h
+TMP112D1 1001001 49h
+TMP112D2 1001010 4Ah
+TMP112D3 1001011 4Bh
+Address + Alert Variant
+(SOT563-6 package)
+TMP112A
+TMP112B
+TMP112D
+TMP112N
+GND 1001000 48h
+V+ 1001001 49h
+SDA 1001010 4Ah
+SCL 1001011 4Bh
+7.3.2.3 Writing and Reading Operation
+Accessing a particular register on the TMP112 family is accomplished by writing the appropriate value to the 
+pointer register. The value for the pointer register is the first byte transferred after the target address byte with 
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+16 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+the R/W bit low. Every write operation to the TMP112 family requires a value for the pointer register (see Figure 
+7-4).
+When reading from the TMP112 family, the last value stored in the pointer register by a write operation is used 
+to determine which register is read by a read operation. To change the register pointer for a read operation, a 
+new value must be written to the pointer register. This action is accomplished by issuing a target-address byte 
+with the R/ W bit low, followed by the pointer register byte. No additional data are required. The controller can 
+then generate a START condition and send the target address byte with the R/ W bit high to initiate the read 
+command. See Figure 7-5 for details of this sequence. If repeated reads from the same register are desired, 
+continuously sending the pointer register bytes is not necessary because the TMP112 family retains the pointer 
+register value until the value is changed by the next write operation.
+Register bytes are sent with the most significant byte first, followed by the least significant byte.
+7.3.2.4 Target Mode Operations
+The TMP112 family can operate as a target receiver or target transmitter. As a target device, the TMP112 family 
+never drives the SCL line.
+7.3.2.4.1 Target Receiver Mode
+The first byte transmitted by the controller is the target address with the R/ W bit low. The TMP112 family then 
+acknowledges reception of a valid address. The next byte transmitted by the controller is the pointer register. 
+The TMP112 family then acknowledges reception of the pointer register byte. The next byte or bytes are written 
+to the register addressed by the pointer register. The TMP112 family acknowledges reception of each data byte. 
+The controller can terminate data transfer by generating a START or STOP condition.
+7.3.2.4.2 Target Transmitter Mode
+The first byte transmitted by the controller is the target address with the R/ W bit high. The target acknowledges 
+reception of a valid target address. The next byte is transmitted by the target and is the most significant byte of 
+the register indicated by the pointer register. The controller acknowledges reception of the data byte. The next 
+byte transmitted by the target is the least significant byte. The controller acknowledges reception of the data 
+byte. The controller can terminate data transfer by generating a not-acknowledge on reception of any data byte 
+or by generating a START or STOP condition.
+7.3.2.5 SMBus Alert Function
+The TMP112 family supports the SMBus alert function. When the TMP112 family operates in interrupt mode (TM 
+= 1), the ALERT pin can be connected as an SMBus alert signal (when the ALERT pin is available). Irrespective 
+of the availability of the ALERT pin, the alert status is set. When a controller senses that an alert condition is 
+present on the alert line, the controller sends an SMBus ALERT command (0001 1001) to the bus. If the ALERT 
+pin is active or the alert is set, the device acknowledges the SMBus ALERT command and responds by returning 
+the target address on the SDA line. The eighth bit (LSB) of the target address byte indicates if the alert condition 
+is caused by the temperature exceeding T (HIGH) or falling below T (LOW). The LSB is high if the temperature is 
+greater than T (HIGH), or low if the temperature is less than T (LOW). Refer to the Figure 7-6 section for details of 
+this sequence.
+If multiple devices on the bus respond to the SMBus ALERT command, arbitration during the target address 
+portion of the SMBus ALERT command determines which device clears the alert status of that device. The 
+device with the lowest two-wire address wins the arbitration. If the TMP112 family wins the arbitration, the 
+TMP112 family ALERT pin becomes inactive and/or clears the status bit at the completion of the SMBus ALERT 
+command. If the TMP112 family loses the arbitration, the TMP112 family ALERT pin and/or the status bit remains 
+active.
+7.3.2.6 General Call
+The TMP112 family responds to a two-wire general-call address (0000 000) if the eighth bit is 0. The device 
+acknowledges the general-call address and responds to commands in the second byte. If the second byte is 
+0000 0110, the TMP112 family internal registers are reset to power-up values. The TMP112 family does not 
+support the general-address acquire command.
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 17
+Product Folder Links: TMP112 TMP112D
+
+7.3.2.7 High-Speed (Hs) Mode
+For the two-wire bus to operate at frequencies above 400 kHz, the controller device must issue a Hs-mode 
+controller code (0000 1xxx) as the first byte after a START condition to switch the bus to high-speed operation. 
+The TMP112 family does not acknowledge this byte, but switches the input filters on the SDA and SCL pins 
+and the output filters on the SDA pin to operate in Hs-mode, thus allowing transfers at up to 2.85 MHz. After 
+the Hs-mode controller code has been issued, the controller transmits a two-wire target address to initiate a 
+data-transfer operation. The bus continues to operate in Hs-mode until a STOP condition occurs on the bus. 
+Upon receiving the STOP condition, the TMP112 family switches the input and output filters back to fast-mode 
+operation.
+7.3.2.8 Timeout Function
+The TMP112 family resets the serial interface if the SCL pin is held low for 30 ms (typical) between a start 
+and stop condition. The TMP112 family releases the SDA line if the SCL pin is pulled low and waits for a start 
+condition from the host controller. To avoid activating the timeout function, maintain a communication speed of at 
+least 1 kHz for SCL operating frequency.
+7.3.2.9 Timing Diagrams
+The TMP112 family is two-wire, SMBus and I 2C interface-compatible. Figure 7-4  to Figure 7-6  describe the 
+various operations on the TMP112 family. Bus definitions are:
+Bus Idle: Both SDA and SCL lines remain high.
+Start Data Transfer: A change in the state of the SDA line, from high to low, when the SCL line is high, defines 
+a START condition. Each data transfer is initiated with a START condition.
+Stop Data Transfer: A change in the state of the SDA line from low to high when the SCL line is high defines a 
+STOP condition. Each data transfer is terminated with a repeated START or STOP condition.
+Data Transfer: The number of data bytes transferred between a START and a STOP condition is not limited and 
+is determined by the controller device. The TMP112 family can also be used for single byte updates. To update 
+only the MS byte, terminate the communication by issuing a START or STOP communication on the bus.
+Acknowledge: Each receiving device, when addressed, is obliged to generate an Acknowledge bit. A device 
+that acknowledges must pull down the SDA line during the Acknowledge clock pulse in such a way that the SDA 
+line is stable low during the high period of the Acknowledge clock pulse. Setup and hold times must be taken into 
+account. On a controller receive, the termination of the data transfer can be signaled by the controller generating 
+a Not-Acknowledge ('1') on the last byte that has been transmitted by the target.
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+18 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+7.3.2.9.1 Two-Wire Timing Diagrams
+Frame 1 Two Wire Device Address Byte Frame 2 Pointer Register Byte
+Frame 4 Data Byte 2
+1
+Start By
+Host
+ACK By
+TMP112
+ACK By
+TMP112
+ACK By
+TMP112
+Stop By
+Host
+1
+D7 D6 D5 D4 D3 D2 D1 D0
+9
+Frame 3 Data Byte 1
+ACK By
+TMP112
+1
+D7SDA
+(Continued)
+SCL
+(Continued)
+D6 D5 D4 D3 D2 D1 D0
+9
+9
+SDA
+SCL
+0 0 1 0 A1 A0 0 0 0 0 0 0 P1 P0 …
+…
+1 9 1
+NOTE: (1) The value of A0 and A1 are determined by the ADD0 pin.
+(1) (1)
+W / R
+Figure 7-4. Two-Wire Timing Diagram for Write Word Format
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 19
+Product Folder Links: TMP112 TMP112D
+
+1
+Start By
+Host
+ACK By
+TMP112
+ACK By
+TMP112
+Start By
+Host
+ACK By
+TMP112
+ACK By
+Host
+From
+TMP112
+1 9 1 9
+1 9 1 9
+SDA
+SCL
+0 0 1 R/W 0 0 0 0 0 0 P1 P0 …
+…
+…
+…
+SDA
+(Continued)
+SCL
+(Continued)
+SDA
+(Continued)
+SCL
+(Continued)
+R/W D7 D6 D5 D4 D3 D2 D1 D0
+Stop By
+Host
+ACK By
+Host
+From
+TMP112
+1 9
+D7 D6 D5 D4 D3 D2 D1 D0
+Frame 1 Two-Wire Device Address Byte Frame 2 Pointer Register Byte
+Frame 4 Data Byte 1 Read RegisterFrame 3 Two-Wire Device Address Byte
+Frame 5 Data Byte 2 Read Register
+1 0 0 1 0
+0 A1
+(1)
+A0
+(1)
+Stop By
+Host
+A1
+(1)
+A0
+(1)
+(2)
+(3)
+NOTE: (1) The value of A0 and A1 are determined by the ADD0 pin.
+            (2) Host should leave SDA high to terminate a single-byte read operation.
+            (3) Host should leave SDA high to terminate a two-byte read operation.
+Figure 7-5. Two-Wire Timing Diagram for Read Word Format
+Start By
+Host
+ACK By
+TMP112
+From
+TMP112
+NACK By
+Host
+Stop By
+Host
+1 9 1 9
+SDA
+SCL
+ALERT
+0 0 0 1 1 0 0 R/W 1 0 0 1 Status
+Frame 2 Device Address ByteFrame 1 SMBus ALERT Response Address Byte
+A1 A0
+(1) (1)
+NOTE: (1) The value of A0 and A1 are determined by the ADD0 pin.
+Figure 7-6. Timing Diagram for SMBus ALERT
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+20 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+7.4 Device Functional Modes
+7.4.1 Continuous-Conversion Mode
+The default mode of the TMP112 family is continuous conversion mode. During continuous-conversion mode, 
+the ADC performs continuous temperature conversions and stores each results to the temperature register, 
+overwriting the result from the previous conversion. The conversion rate bits, CR1 and CR0, configure the 
+TMP112 family for conversion rates of 0.25 Hz, 1 Hz, 4 Hz, or 8 Hz. The default rate is 4 Hz. The TMP112 
+family has a typical conversion time of 10 ms for both SOT563-6 and X2SON-5 packages. To achieve different 
+conversion rates, the TMP112 family makes a conversion and then powers down and waits for the appropriate 
+delay set by CR1 and CR0. Table 7-5 lists the settings for CR1 and CR0.
+Table 7-5. Conversion Rate Settings
+CR1 CR0 CONVERSION RATE
+0 0 0.25 Hz
+0 1 1 Hz
+1 0 4 Hz (default)
+1 1 8 Hz
+After a power-up or general-call reset, the TMP112 family immediately begins a conversion as shown in Figure 
+7-7. The first result is available after 10 ms (typical). The active quiescent current during conversion is 55 μA 
+(typical at 27°C) for both SOT563-6 and X2SON-5 packages. The quiescent current during delay is 2.6 μA 
+(typical at 27°C) for SOT563-6 and X2SON-5 packages.
+Start of
+Conversion
+Startup
+Delay(1)
+10ms
+10ms
+Figure 7-7. Conversion Start
+7.4.2 Extended Mode (EM)
+The extended mode bit configures the device for normal mode operation (EM = 0) or extended mode operation 
+(EM = 1). In normal mode, the temperature register and the high and low limit registers use a 12-bit data format. 
+Normal mode is used to make the TMP112 family compatible with the TMP75 device.
+Extended mode (EM = 1) allows measurement of temperatures above 128°C by configuring the temperature 
+register and the high and low limit registers for 13-bit data format.
+7.4.3 One-Shot/Conversion Ready Mode (OS)
+The TMP112 family features a one-shot temperature-measurement mode. When the device is in shutdown 
+mode, writing a 1 to the OS bit begins a single temperature conversion. During the conversion, the OS bit reads 
+0. The device returns to the SHUTDOWN state at the completion of the single conversion. After the conversion, 
+the OS bit reads 1. This feature is useful for reducing power consumption in the TMP112 family when continuous 
+temperature monitoring is not required.
+As a result of the short conversion time, the TMP112 family can achieve a higher conversion rate. A single 
+conversion typically occurs 10 ms for both SOT563-6 and X2SON-5 packages, and a read can occur in less than 
+20 μs. When using one-shot mode, 80 or more conversions per second are possible.
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 21
+Product Folder Links: TMP112 TMP112D
+
+7.4.4 Thermostat Mode (TM)
+The thermostat mode bit indicates to the device whether to operate in comparator mode (TM = 0 ) or interrupt 
+mode (TM = 1).
+7.4.4.1 Comparator Mode (TM = 0)
+In Comparator mode (TM = 0), the Alert pin and status flag are activated when the temperature equals or 
+exceeds the value in the T (HIGH) register and remains active until the temperature falls below the value in the 
+T(LOW) register. For more information on the comparator mode, see the Section 7.5.4 section.
+7.4.4.2 Interrupt Mode (TM = 1)
+In Interrupt mode (TM = 1), the Alert pin is activated with the conditions explained in the Section 7.5.4 . The 
+Alert pin is cleared when the host controller reads the temperature register. For more information on the interrupt 
+mode, see the Section 7.5.4 .
+7.5 Programming
+7.5.1 Pointer Register
+Figure 7-8 shows the internal register structure of the TMP112 family. The 8-bit Pointer Register of the device is 
+used to address a given data register. The Pointer Register uses the two LSBs (see Table 7-13) to identify which 
+of the data registers must respond to a read or write command. The power-up reset value of P1/P0 is '00'. By 
+default, the TMP112 family reads the temperature on power-up.
+I/O
+Control
+Interface
+SCL
+SDA
+T emperature
+Register
+Configuration
+Register
+TLOW
+Register
+THIGH
+Register
+Pointer
+Register
+Figure 7-8. Internal Register Structure
+Table 7-6 lists the pointer address of the registers available in the TMP112 family. Table 7-7 lists the bits of the 
+Pointer Register byte. During a write command, bytes P2 through P7 must always be 0.
+Table 7-6. Pointer Addresses
+P1 P0 REGISTER
+0 0 Temperature Register (Read Only)
+0 1 Configuration Register (Read/Write)
+1 0 TLOW Register (Read/Write)
+1 1 THIGH Register (Read/Write)
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+22 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+Table 7-7. Pointer Register Byte
+P7 P6 P5 P4 P3 P2 P1 P0
+0 0 0 0 0 0 Register Bits
+7.5.2 Temperature Register
+The Temperature Register of the TMP112 family is configured as a 12-bit read-only register (setting the EM bit 
+to 0 in the configuration register; see the Extended Mode section), or as a 13-bit read-only register (setting the 
+EM bit to 1 in the configuration register) that stores the output of the most recent conversion. Two bytes must be 
+read to obtain data and are listed in Table 7-8 and Table 7-9. Byte 1 is the most significant byte (MSB), followed 
+by byte 2, the least significant byte (LSB). The first 12 bits (13 bits in extended mode) are used to indicate 
+temperature. The least significant byte does not have to be read if that information is not needed.
+Table 7-8. Byte 1 of Temperature Register 
+Note: Extended mode 13-bit configuration shown in parentheses.
+BYTE D7 D6 D5 D4 D3 D2 D1 D0
+1
+T11 T10 T9 T8 T7 T6 T5 T4
+(T12) (T11) (T10) (T9) (T8) (T7) (T6) (T5)
+Table 7-9. Byte 2 of Temperature Register 
+Note: Extended mode 13-bit configuration shown in parentheses.
+BYTE D7 D6 D5 D4 D3 D2 D1 D0
+2
+T3 T2 T1 T0 0 0 0 0
+(T4) (T3) (T2) (T1) (T0) (0) (0) (1)
+7.5.3 Configuration Register
+The Configuration Register is a 16-bit read/write register used to store bits that control the operational modes of 
+the temperature sensor. Read/write operations are performed MSB first. Table 7-10 lists the format and power-up 
+and reset values of the configuration register. For compatibility, the first byte corresponds to the Configuration 
+Register in the TMP75 and TMP275 devices. All registers are updated byte by byte.
+Table 7-10. Configuration and Power-Up/Reset Formats
+BYTE D7 D6 D5 D4 D3 D2 D1 D0
+1
+OS R1 R0 F1 F0 POL TM SD
+0 1 1 0 0 0 0 0
+2
+CR1 CR0 AL EM 0 0 0 0
+1 0 1 0 0 0 0 0
+7.5.3.1 Shutdown Mode (SD)
+The Shutdown mode bit saves maximum power by shutting down all device circuitry other than the serial 
+interface, reducing current consumption to typically less than 0.15 μA for both SOT563-6 and X2SON-5 
+packages. Shutdown mode is enabled when the SD bit = 1; the device shuts down when current conversion 
+is completed. When SD = 0, the device maintains a continuous conversion state.
+7.5.3.2 Thermostat Mode (TM)
+The Thermostat mode bit indicates to the device whether to operate in Comparator mode (TM = 0 shown in 
+Figure 7-9) or Interrupt mode (TM = 1 shown in Figure 7-10). For more information on Comparator and Interrupt 
+modes, see the High- and Low-Limit Registers section.
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 23
+Product Folder Links: TMP112 TMP112D
+
+7.5.3.3 Polarity (POL)
+The polarity bit allows the user to adjust the polarity of the ALERT pin/flag output. If the POL bit is set to 0 
+(default), the ALERT pin/flag becomes active low. When the POL bit is set to 1, the ALERT pin/flag becomes 
+active high and the state of the ALERT pin/flag is inverted. The operation of the ALERT pin/flag in various modes 
+is illustrated in Figure 7-9 and Figure 7-10.
+THigh_Limit
+TLow_Limit
+Temperature 
+Conversions
+ALERT pin/ ag
+Polarity = 0b
+ALERT pin/  ag
+Polarity = 1b
+I2C Read
+Temperature
+Figure 7-9. Comparator Mode
+THigh_Limit
+TLow_Limit
+Temperature 
+Conversions
+ALERT pin
+Polarity = 0b
+ALERT pin
+Polarity = 1b
+I2C Read
+Temperature
+Figure 7-10. Interrupt Mode
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+24 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+7.5.3.4 Fault Queue (F1/F0)
+A fault condition exists when the measured temperature exceeds the user-defined limits set in the T HIGH and 
+TLOW registers. Additionally, the number of fault conditions required to generate an alert, can be programmed 
+using the fault queue. The fault queue is provided to prevent a false alert as a result of environmental noise. The 
+fault queue requires consecutive fault measurements to trigger the alert function. Table 7-11 lists the number of 
+measured faults that can be programmed to trigger an alert condition in the device. For T HIGH and TLOW register 
+format and byte order, see the High- and Low-Limit Registers section.
+Table 7-11. TMP112 family Fault Settings
+F1 F0 CONSECUTIVE FAULTS
+0 0 1
+0 1 2
+1 0 4
+1 1 6
+7.5.3.5 Converter Resolution (R1 and R0)
+The converter resolution bits, R1 and R0, are read-only bits. The TMP112 family converter resolution is set on 
+start up to 11 which sets the temperature register to a 12-bit resolution.
+7.5.3.6 One-Shot (OS)
+When the device is in shutdown mode, writing a 1 to the OS bit begins a single temperature conversion. During 
+the conversion, the OS bit reads 0. The device returns to the SHUTDOWN state at the completion of the single 
+conversion. For more information on the one-shot conversion mode, see the Section 7.4.3 section.
+7.5.3.7 Extended Mode (EM)
+The extended mode bit configures the device for normal mode operation (EM = 0) or extended mode operation 
+(EM = 1). In normal mode, the temperature register and the high and low limit registers use a 12-bit data format. 
+For more information on the extended mode, see the Section 7.4.2 section.
+7.5.3.8 Alert (AL)
+The AL bit is a read-only function. Reading the AL bit provides information about the comparator mode status. 
+The state of the POL bit inverts the polarity of data returned from the AL bit. When the POL bit equals 0, the AL 
+bit reads as 1 until the temperature equals or exceeds T (HIGH) for the programmed number of consecutive faults, 
+causing the AL bit to read as 0. The AL bit continues to read as 0 until the temperature falls below T (LOW) for the 
+programmed number of consecutive faults, when the device again reads as 1. The status of the TM bit does not 
+affect the operation of the AL bit.
+7.5.4 High- and Low-Limit Register
+The temperature limits are stored in the T (LOW) and T (HIGH) registers in the same format as the temperature 
+result, and the values are compared to the temperature result on every conversion. The outcome of the 
+comparison drives the behavior of the ALERT pin/flag, which operates as a comparator output or an interrupt, 
+and is set by the TM bit in the configuration register.
+In Comparator mode (TM = 0), the ALERT pin and status flag become active when the temperature equals or 
+exceeds the value in the T (HIGH) register and generates a consecutive number of faults according to fault bits F1 
+and F0. The ALERT pin and status flag remain active until the temperature falls below the indicated T (LOW) value 
+for the same number of faults.
+In interrupt mode (TM = 1), the ALERT pin becomes active when the temperature equals or exceeds the value 
+in T(HIGH) for a consecutive number of fault conditions (as shown in Table 7-11). The ALERT pin remains active 
+until a read operation of any register occurs, or the device successfully responds to the SMBus alert response 
+address. The ALERT pin is also cleared if the device is placed in shutdown mode. When the ALERT pin 
+is cleared, the pin becomes active again only when temperature falls below T (LOW), and remains active until 
+cleared by a read operation of any register or a successful response to the SMBus alert response address. 
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 25
+Product Folder Links: TMP112 TMP112D
+
+When the ALERT pin is cleared, the above cycle repeats, with the ALERT pin becoming active when the 
+temperature equals or exceeds T (HIGH). The ALERT pin can also be cleared by resetting the device with the 
+general-call Reset command. This action also clears the state of the internal registers in the device, returning the 
+device to comparator mode (TM = 0).
+Both operating modes are represented in Figure 7-9 and Figure 7-10. Table 7-12 and Table 7-13 list the format 
+for the THIGH and TLOW registers. The most significant byte is sent first, followed by the least significant byte. The 
+power-up reset values for T(HIGH) and T(LOW) are:
+• THIGH = +80°C
+• TLOW = +75°C
+The format of the data for THIGH and TLOW is the same as for the Temperature Register.
+Table 7-12. Bytes 1 and 2 of THIGH Register 
+BYTE D7 D6 D5 D4 D3 D2 D1 D0
+1
+H11 H10 H9 H8 H7 H6 H5 H4
+(H12) (H11) (H10) (H9) (H8) (H7) (H6) (H5)
+BYTE D7 D6 D5 D4 D3 D2 D1 D0
+2
+H3 H2 H1 H0 0 0 0 0
+(H4) (H3) (H2) (H1) (H0) (0) (0) (0)
+Table 7-13. Bytes 1 and 2 of TLOW Register 
+BYTE D7 D6 D5 D4 D3 D2 D1 D0
+1
+L11 L10 L9 L8 L7 L6 L5 L4
+(L12) (L11) (L10) (L9) (L8) (L7) (L6) (L5)
+BYTE D7 D6 D5 D4 D3 D2 D1 D0
+2
+L3 L2 L1 L0 0 0 0 0
+(L4) (L3) (L2) (L1) (L0) (0) (0) (0)
+8 Application and Implementation
+Note
+Information in the following applications sections is not part of the TI component specification, and 
+TI does not warrant its accuracy or completeness. TI’s customers are responsible for determining 
+suitability of components for their purposes. Customers should validate and test their design 
+implementation to confirm system functionality.
+8.1 Application Information
+The TMP112 family is used to measure the PCB temperature of the board location where the device is mounted. 
+The programmable address options allow up to four locations on the board to be monitored on a single serial 
+bus.
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+26 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+8.2 Typical Application
+SCL
+GND
+ALERT
+2
+4
+1
+ADD0
+V+
+6
+3
+5
+0.01 µF
+Two-Wire
+Host Controller
+TMP112
+1.4 V to 3.6 V
+SDA
+Pullup Resistors
+Supply Bypass 
+Capacitor
+Supply Voltage
+5 k
+Note
+The SCL, SDA, and ALERT pins require pullup resistors.
+Figure 8-1. Typical Connections (SOT563-6 Package)
+I2C 
+Controller
+TMP112D0
+TMP112D1
+TMP112D2
+TMP112D3
+SCL
+SDA
+SCL
+SDA
+V+
+GND
+5k   5k     
+0.01µF  
+1.4V to 3.6V
+5k   
+ALERTALERT
+TMP112DSCL
+SDA
+V+
+GND
+ADD0
+Alert 
+Variant
+Address 
+Variant
+GND
+Figure 8-2. Typical Connections (X2SON-5 Package)
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 27
+Product Folder Links: TMP112 TMP112D
+
+8.2.1 Design Requirements
+The TMP112 family requires pullup resistors on the SCL, SDA, and ALERT pins. The recommended value for 
+the pullup resistors is 5k Ω. In some applications the pullup resistor can be lower or higher than 5k Ω but must 
+not exceed 3mA of current on any of those pins. A 0.01- μF bypass capacitor on the supply is recommended as 
+shown in Figure 8-1 and Figure 8-2. The SCL and SDA lines can be pulled up to a supply that is equal to or 
+higher than V+ through the pullup resistors. To configure one of four different addresses on the bus, connect the 
+ADD0 pin to either the GND, V+, SDA, or SCL pin. The TMP112Dx also provides four different address options 
+when only ALERT pin is used.
+8.2.2 Detailed Design Procedure
+Place the device in close proximity to the heat source that must be monitored, with a proper layout for good 
+thermal coupling. This placement verifies that temperature changes are captured within the shortest possible 
+time interval. To maintain accuracy in applications that require air or surface temperature measurement, take 
+care to isolate the package and leads from ambient air temperature. A thermally-conductive adhesive is helpful 
+in achieving accurate surface temperature measurement.
+The TMP112 family is a very low-power device and generates very low noise on the supply bus. Applying an 
+RC filter to the V+ pin of the TMP112 family can further reduce any noise that the device can propagate to other 
+components. R(F) in Figure 8-3 must be less than 5 kΩ and C(F) must be greater than 10 nF.
+Device
+SCL SDA
+GND V+
+ALERT ADD0
+C(F) 10 nF≥
+R(F) 5 k≤ Ω
+Supply Voltage
+Figure 8-3. Noise Reduction Techniques (for SOT563-6 package as an example)
+8.2.3 Application Curve
+Figure 8-4  shows the step response of the TMP112 to a submersion in an oil bath of 100ºC from room 
+temperature (25ºC). The time-constant, or the time for the output to reach 63% of the input step, is around 1.2s 
+for both packages. The time-constant result depends on the printed-circuit board (PCB) size that the TMP112 is 
+mounted. For this test, the TMP112 is soldered to a two-layer PCB that measured 0.5 inches × 0.5 inches.
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+28 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+T i m e  ( s )
+Temperature (
+
+C)
+- 1 0 1 2 3 4 5 6 7 8 9 1 0 1 1 1 2
+2 0
+3 0
+4 0
+5 0
+6 0
+7 0
+8 0
+9 0
+1 0 0
+1 1 0
+D R L  p a c k a g e
+D P W  p a c k a g e
+Figure 8-4. Temperature Step Response
+8.2.4 Power Supply Recommendations
+The TMP112 family operates with power supply in the range of 1.4 to 3.6 V. The device is optimized for operation 
+at 3.3-V supply but can measure temperature accurately in the full supply range.
+A power-supply bypass capacitor is required for proper operation. Place this capacitor as close as possible to 
+the supply and ground pins of the device. A typical value for this supply bypass capacitor is 0.01 μF. Applications 
+with noisy or high-impedance power supplies can require additional decoupling capacitors to reject power-supply 
+noise.
+8.3 Layout
+8.3.1 Layout Guidelines
+Place the power-supply bypass capacitor as close as possible to the supply and ground pins. The recommended 
+value of this bypass capacitor is 0.01 μF. Additional decoupling capacitance can be added to compensate 
+for noisy or high-impedance power supplies. Pull up the open-drain output pins (SDA, SCL) through 5k Ω 
+pullup resistors. However, using a minimal SDA and ALERT pins pull-up current is recommended to prevent 
+self-heating and temperature accuracy reduction.
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 29
+Product Folder Links: TMP112 TMP112D
+
+8.3.2 Layout Example
+Serial Bus Traces
+Pull-Up Resistors
+Supply Bypass 
+Capacitor
+Via to Power or Ground Plane
+Via to Internal Layer
+Supply Voltage
+SCL
+GND
+ALERT ADD0
+V+
+SDA
+Ground Plane for
+Thermal Coupling 
+to Heat Source
+Heat Source
+Figure 8-5. Layout Example (SOT563-6 package)
+There are special considerations that need to be taken for the TMP112 X2SON package. These considerations 
+are due to the center pad being electrically connected to either address or alert (depending on the orderables 
+shown in Address and Alert Variant Device Target Address ) and because of the dimensions of the package and 
+the pads. With the address option, the center pad can be directly connected with a trace on the same layer to 
+one of the 4 edge pins for setting the device address as shown in Figure 8-6.
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+30 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+12
+3
+4 5
+Not to scale
+0.01µF
+5k5k 
+I2C Bus
+Via to Power Plane
+Via to Internal Plane
+Internal Layer Trace
+Top/Bottom Layer Trace
+Via to Ground Plane
+3
+4
+2
+5
+1
+Center Pin Layout (Address Variant)
+Figure 8-6. ADD0 Pin Layout Example (X2SON-5 package)
+When using the ALERT pin of the device, a 4 mil trace can be routed between pins 1 and 5 or pins 2 and 4. 
+This signal can be either routed out in between the pads or on a different layer using a via within the center pad 
+as shown in Figure 8-7. Both of these methods have constraints that must be considered as explained below. 
+Ultimately, choosing one of these methods depends on the specifications of the board manufacturing process:
+• Option 1 (Routing in between pads): introduces trace clearance and trace width limitations. As the 
+maximum space between pads is 0.26 mm (10.2 mil), assuming a trace width of 0.1 mm (4 mil) limits the 
+minimum clearance to 0.08 mm (3.15 mil).
+• Option 2 (Routing on a different layer using a via): has specific benefits to the user application. For 
+instance, minimum trace clearance and trace width are higher but require a via on the center pad with 
+specific dimensions. The via diameter must be less than 0.305 mm (13.78 mil) to keep the via smaller than 
+the center pad and a minimum drill diameter of 0.1 mm (4 mil) can be assumed to avoid manufacturing 
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 31
+Product Folder Links: TMP112 TMP112D
+
+issues. With this scenario, a minimum annular ring width specification of 0.125mm (5 mil) is required: Anullar 
+Ring Width (mm) = (0.305-0.1)/2.
+12
+3
+4 5
+Not to scale
+0.01µF
+5k
+5k 
+5k
+MCU INT
+I2C Bus
+3
+4
+2
+5
+1
+0.08mm
+0.102mm Trace on 
+Bottom Layer
+4
+2
+5
+1
+0.102mm 0.305mmVia 3
+Via to Power Plane
+Via to Internal Plane
+Internal Layer Trace
+Top/Bottom Layer Trace
+Via to Ground Plane
+Center Pin Layout Option 1 (Alert Variant) Center Pin Layout Option 2 (Alert Variant)
+Figure 8-7. ALERT Pin Layout Example (X2SON-5 package)
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+32 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+9 Device and Documentation Support
+9.1 Documentation Support
+9.1.1 Related Documentation
+For related documentation see the following:
+• Texas Instruments, TMP102 Low-Power Digital Temperature Sensor With SMBus and Two-Wire Serial 
+Interface in SOT563, data sheet
+• Texas Instruments, TMPx75 Temperature Sensor With I2C and SMBus Interface in Industry Standard LM75 
+Form Factor and Pinout, data sheet
+• Texas Instruments, TMP275 ±0.5°C Temperature Sensor With I2C and SMBus Interface in Industry Standard 
+LM75 Form Factor and Pinout, data sheet
+• Texas Instruments, Ultralow Power Multi-Sensor Data Logger With NFC Interface, design guide
+• Texas Instruments, Capacitive-Based Human Proximity Detection for System Wake-Up & Interrupt, design 
+guide
+• Texas Instruments, Designing and Manufacturing with TI's X2SON Packages, design guide
+9.2 Receiving Notification of Documentation Updates
+To receive notification of documentation updates, navigate to the device product folder on ti.com. Click on 
+Notifications to register and receive a weekly digest of any product information that has changed. For change 
+details, review the revision history included in any revised document.
+9.3 Support Resources
+TI E2E ™ support forums  are an engineer's go-to source for fast, verified answers and design help — straight 
+from the experts. Search existing answers or ask your own question to get the quick design help you need.
+Linked content is provided "AS IS" by the respective contributors. They do not constitute TI specifications and do 
+not necessarily reflect TI's views; see TI's Terms of Use.
+9.4 Trademarks
+TI E2E™ is a trademark of Texas Instruments.
+All trademarks are the property of their respective owners.
+9.5 Electrostatic Discharge Caution
+This integrated circuit can be damaged by ESD. Texas Instruments recommends that all integrated circuits be handled 
+with appropriate precautions. Failure to observe proper handling and installation procedures can cause damage.
+ESD damage can range from subtle performance degradation to complete device failure. Precision integrated circuits may 
+be more susceptible to damage because very small parametric changes could cause the device not to meet its published 
+specifications.
+9.6 Glossary
+TI Glossary This glossary lists and explains terms, acronyms, and definitions.
+10 Revision History
+NOTE: Page numbers for previous revisions may differ from page numbers in the current version.
+Changes from Revision K (June 2024) to Revision L (July 2024) Page
+• Updated the numbering format for tables, figures, and cross-references throughout the document................. 1
+• Updated the typo for Average quiescent current “Serial bus active, SCL frequency = 2.85 MHz” typical value 
+from 30µA to 40µA............................................................................................................................................. 6
+• Updated the typo for Shutdown current “Serial bus active, SCL frequency = 2.85 MHz” typical value from 
+25µA to 35µA......................................................................................................................................................6
+• Updated empty graphs in the Typical Characteristics section.......................................................................... 10
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 33
+Product Folder Links: TMP112 TMP112D
+
+• Updated the Temperature Step Response in the Application Curve section 0.8s to 1.2s due to changing the 
+PCB size of mounted TMP112 from 0.375×0.437 inches to 0.5×0.5 inches.................................................... 28
+Changes from Revision J (February 2024) to Revision K (June 2024) Page
+• Updated the numbering format for tables, figures, and cross-references throughout the document................. 1
+• Changed the "Conversion time" for TMP112A/B/N throughout the document................................................... 1
+• Changed the active, shutdown, average, and delay quiescent current for TMP112A/B/N throughout the 
+document............................................................................................................................................................1
+• Added TMP112D (DRL packaged) throughout the document............................................................................ 4
+• Changed DRL package Thermal Information section.........................................................................................5
+• Changed "Conversion time" in Electrical Characteristics table for TMP112A/B/N..............................................6
+• Changed and updated Average quiescent current specs for DRL package with DPW package in the Electrical 
+Characteristics table........................................................................................................................................... 6
+• Added Average quiescent current MAX to the “Serial bus inactive, CR1 = 0, CR0 = 1” in the Electrical 
+Characteristics table........................................................................................................................................... 6
+• Changed Average quiescent current “Serial bus inactive, CR1 = 1, CR0 = 0” for DRL package in Electrical 
+Characteristics table........................................................................................................................................... 6
+• Changed Average quiescent current “Serial bus active, SCL frequency = 400 kHz” for DRL package in 
+Electrical Characteristics table............................................................................................................................6
+• Added Average quiescent current “Serial bus active, SCL frequency = 1 MHz” for DRL package in Electrical 
+Characteristics table........................................................................................................................................... 6
+• Changed Average quiescent current “Serial bus active, SCL frequency = 2.85 MHz” for DRL package in 
+Electrical Characteristics table............................................................................................................................6
+• Changed the frequency from 3.4 to 2.85 MHz in the POWER SUPPLY section of the Electrical Characteristics
+table....................................................................................................................................................................6
+• Changed and updated Shutdown current specs for DRL package with DPW package in the Electrical 
+Characteristics table........................................................................................................................................... 6
+• Changed Shutdown current “Serial bus inactive” for DRL package in the Electrical Characteristics table........ 6
+• Changed Shutdown current “Serial bus active, SCL frequency = 400 kHz” for DRL package in Electrical 
+Characteristics table........................................................................................................................................... 6
+• Added Shutdown current “Serial bus active, SCL frequency = 1 MHz” for DRL package in Electrical 
+Characteristics table........................................................................................................................................... 6
+• Changed Shutdown current “Serial bus active, SCL frequency = 2.85 MHz” for DRL package in Electrical 
+Characteristics table........................................................................................................................................... 6
+• Changed Average Quiescent Current vs Temperature, Shutdown Current vs Temperature, Conversion Time 
+vs Temperature, and Quiescent Current vs Bus Frequency graphs for TMP112A/B/N in the Typical 
+Characteristics section........................................................................................................................................9
+Changes from Revision I (December 2018) to Revision J (February 2024) Page
+• Updated the numbering format for tables, figures, and cross-references throughout the document................. 1
+• Changed all instances of legacy terminology to controller and peripheral where I2C is mentioned ..................1
+• Added X2SON (DPW) package (TMP112Dx) and related information throughout the document .....................1
+• Changed reporting quiescent current from previous Maximum values to Typical values in the Features section
+............................................................................................................................................................................1
+• Added Device Comparison section ................................................................................................................... 3
+• Added Output current (±10mA) to Absolute Maximum Ratings section............................................................. 5
+• Added DPW package to Thermal Information section........................................................................................5
+• Added Thermal Mass to Thermal Information section........................................................................................5
+• Added TMP112Dx (DPW package) information to Electrical Characteristics ....................................................6
+• Changed “Timeout time” in description to “Timeout (SCL=GND or SDA=GND)”............................................... 6
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+34 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+• Added Fast Mode Plus column to the Timing Requirements table.....................................................................8
+• Moved the "Two-Wire Timing Diagram" figure from the Two-Wire Timing Diagrams section to the 
+Specifications section ........................................................................................................................................8
+• Added TMP112Dx and TMP110 information to the Advantages of TMP112 Family Versus TMP102 and 
+TMP110 table .................................................................................................................................................. 13
+• Added 0.0625 and -0.0625 row to Temperature column of 12-Bit Temperature Data Format and 13-Bit 
+Temperature Data Format tables in the Digital Temperature Output section................................................... 14
+• Updated Address and Alert Variant Device Target Address table in the Serial Bus Address section to include 
+the new package (TMP112Dx) ........................................................................................................................ 16
+• Changed “Output Transfer Function Diagrams” figure to “Comparator Mode” and “Interrupt Mode” figures for 
+more clarity....................................................................................................................................................... 24
+• Added Layout Guidelines and Layout Example for new package.................................................................... 29
+Changes from Revision H (October 2018) to Revision I (December 2018) Page
+• Deleted Absolute Maximum Ratings for output voltage and replaced with pin level information....................... 5
+• Changed input voltage maximum to voltage maximum for SCL, ADD0 and SDA pins......................................5
+• Added voltage at ALERT pin Absolute Maximum Ratings ................................................................................ 5
+11 Mechanical, Packaging, and Orderable Information
+The following pages include mechanical, packaging, and orderable information. This information is the most 
+current data available for the designated devices. This data is subject to change without notice and revision of 
+this document. For browser-based versions of this data sheet, refer to the left-hand navigation.
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 35
+Product Folder Links: TMP112 TMP112D
+
+www.ti.com
+PACKAGE OUTLINE
+C
+2X (0.36)4X 0.270.17 0.350.15
+4X 0.270.172X (0.26)
+0.4 MAX0.050.00 (0.1) TYP2X 0.48
+B0.850.75A0.850.75
+X2SON - 0.4 mm max heightDPW0005BPLASTIC SMALL OUTLINE - NO LEAD
+4228233/D   09/2023
+PIN 1 INDEX AREA
+SEATING PLANENOTE 3
+1
+234
+0.1CAB0.05C5PIN 1 ID
+NOTES: 1. All linear dimensions are in millimeters. Any dimensions in parenthesis are for reference only. Dimensioning and tolerancing    per ASME Y14.5M. 2. This drawing is subject to change without notice. 3. The size and shape of this feature may vary.
+NOTE 3
+SCALE  12.000
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+36 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+www.ti.com
+EXAMPLE BOARD LAYOUT
+0.05 MINALL AROUNDTYP
+(0.21) TYPEXPOSED METALCLEARANCE(R0.05) TYP
+4X (0.42)4X (0.22) 4X (0.26)
+(0.25)(0.1) VIA
+(0.78)
+(0.48)
+4X (0.06)
+X2SON - 0.4 mm max heightDPW0005BPLASTIC SMALL OUTLINE - NO LEAD
+4228233/D   09/2023
+SYMM1
+2 3 4SYMM
+LAND PATTERN EXAMPLESOLDER MASK DEFINEDSCALE:60X
+5
+SOLDER MASKOPENING, TYPMETAL UNDERSOLDER MASK, TYP
+NOTES: (continued) 4. This package is designed to be soldered to a thermal pad on the board. For more information, refer to QFN/SON PCB application note    in literature No. SLUA271 (www.ti.com/lit/slua271).  
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 37
+Product Folder Links: TMP112 TMP112D
+
+www.ti.com
+EXAMPLE STENCIL DESIGN
+4X (0.22)4X (0.42)4X (0.06)
+(R0.05) TYP
+(0.24)(0.21)TYP
+(0.78)
+(0.48)
+X2SON - 0.4 mm max heightDPW0005BPLASTIC SMALL OUTLINE - NO LEAD
+4228233/D   09/2023NOTES: (continued) 5. Laser cutting apertures with trapezoidal walls and rounded corners may offer better paste release. IPC-7525 may have alternate   design recommendations.  
+ SOLDER PASTE EXAMPLEBASED ON 0.1 mm THICK STENCIL EXPOSED PAD 592%  PRINTED SOLDER COVERAGE BY AREA UNDER PACKAGESCALE:60X
+SYMM
+1
+2 3 4SYMM5SOLDER MASKEDGE
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+38 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+www.ti.com
+PACKAGE OUTLINE
+C
+1.7
+1.5
+4X 0.5
+2X 1
+6X 0.3
+0.1
+0.6 MAX
+6X 0.18
+0.08
+6X 0.4
+0.2
+0.05
+0.00 TYP
+6X 0.27
+0.15
+B 1.3
+1.1
+A
+1.7
+1.5
+NOTE 3
+SOT - 0.6 mm max heightDRL0006A
+PLASTIC SMALL OUTLINE
+4223266/C   12/2021
+NOTES:
+1. All linear dimensions are in millimeters. Any dimensions in parenthesis are for reference only. Dimensioning and tolerancing
+per ASME Y14.5M.
+2. This drawing is subject to change without notice.
+3. This dimension does not include mold ﬂash, protrusions, or gate burrs. Mold ﬂash, protrusions, or gate burrs shall not
+exceed 0.15 mm per side.
+4. Reference JEDEC registration MO-293 Variation UAAD
+1 6
+PIN 1
+ID AREA
+3
+4
+SEATING PLANE
+0.05 C
+SCALE  8.000
+0.1 C A B
+0.05
+SYMM
+SYMM
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 39
+Product Folder Links: TMP112 TMP112D
+
+www.ti.com
+EXAMPLE BOARD LAYOUT
+0.05 MAX
+AROUND
+0.05 MIN
+AROUND
+6X (0.67)
+6X (0.3)
+(1.48)
+4X (0.5)
+(R0.05) TYP
+4223266/C   12/2021
+SOT - 0.6 mm max heightDRL0006A
+PLASTIC SMALL OUTLINE
+NOTES: (continued)
+5. Publication IPC-7351 may have alternate designs.
+6. Solder mask tolerances between and around signal pads can vary based on board fabrication site.
+7. Land pattern design aligns to IPC-610, Bottom Termination Component (BTC) solder joint inspection criteria.
+SYMM
+LAND PATTERN EXAMPLE
+SCALE:30X
+SYMM
+1
+3 4
+6
+SOLDER MASK
+OPENING
+METAL UNDER
+SOLDER MASK
+SOLDER MASK
+DEFINED
+METALSOLDER MASK
+OPENING
+NON SOLDER MASK
+DEFINED
+(PREFERRED)
+SOLDERMASK DETAILS
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+40 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+www.ti.com
+EXAMPLE STENCIL DESIGN
+(1.48)
+4X (0.5)
+6X (0.67)
+6X (0.3)
+(R0.05) TYP
+SOT - 0.6 mm max heightDRL0006A
+PLASTIC SMALL OUTLINE
+4223266/C   12/2021
+NOTES: (continued)
+8. Laser cutting apertures with trapezoidal walls and rounded corners may oﬀer better paste release. IPC-7525 may have alternate
+design recommendations.
+9. Board assembly site may have diﬀerent recommendations for stencil design.
+SOLDER PASTE EXAMPLE
+BASED ON 0.1 mm THICK STENCIL
+SCALE:30X
+SYMM
+SYMM
+1
+3 4
+6
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 41
+Product Folder Links: TMP112 TMP112D
+
+11.1 Tape and Reel Information
+Reel Width (W1)
+REEL DIMENSIONS
+A0
+B0
+K0
+W
+Dimension designed to accommodate the component length
+Dimension designed to accommodate the component thickness
+Overall width of the carrier tape
+Pitch between successive cavity centers
+Dimension designed to accommodate the component width
+TAPE DIMENSIONS
+K0
+P1
+B0 W
+A0Cavity
+QUADRANT ASSIGNMENTS FOR PIN 1 ORIENTATION IN TAPE
+Pocket Quadrants
+Sprocket Holes
+Q1 Q1Q2 Q2
+Q3 Q3Q4 Q4
+Reel
+Diameter
+User Direction of Feed
+P1
+Device Package
+Type
+Package 
+Drawing Pins SPQ
+Reel
+Diameter 
+(mm)
+Reel
+Width W1 
+(mm)
+A0
+(mm)
+B0
+(mm)
+K0
+(mm)
+P1
+(mm)
+W
+(mm)
+Pin1
+Quadrant
+TMP112AIDRLR SOT-5X3 DRL 6 4000 180.0 8.4 2.0 1.8 0.75 4.0 8.0 Q3
+TMP112AIDRLR SOT-5X3 DRL 6 4000 180.0 8.4 1.98 1.78 0.69 4.0 8.0 Q3
+TMP112BIDRLR SOT-5X3 DRL 6 4000 180.0 8.4 1.98 1.78 0.69 4.0 8.0 Q3
+TMP112NAIDRLR SOT-5X3 DRL 6 4000 180.0 8.4 1.98 1.78 0.69 4.0 8.0 Q3
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+ www.ti.com
+42 Submit Document Feedback Copyright © 2024 Texas Instruments Incorporated
+Product Folder Links: TMP112 TMP112D
+
+TAPE AND REEL BOX DIMENSIONS
+Width (mm)
+W L
+H
+Device Package Type Package Drawing Pins SPQ Length (mm) Width (mm) Height (mm)
+TMP112AIDRLR SOT-5X3 DRL 6 4000 210.0 35.0
+TMP112AIDRLR SOT-5X3 DRL 6 4000 201.0 28.0
+TMP112BIDRLR SOT-5X3 DRL 6 4000 183.0 20.0
+TMP112NAIDRLR SOT-5X3 DRL 6 4000 183.0 20.0
+www.ti.com
+TMP112, TMP112D
+SBOS473L – MARCH 2009 – REVISED JULY 2024
+Copyright © 2024 Texas Instruments Incorporated Submit Document Feedback 43
+Product Folder Links: TMP112 TMP112D
+
+PACKAGE OPTION ADDENDUM
+www.ti.com 17-Sep-2026
+PACKAGING INFORMATION
+Orderable part number Status
+(1)
+Material type
+(2)
+Package | Pins Package qty | Carrier RoHS
+(3)
+Lead finish/
+Ball material
+(4)
+MSL rating/
+Peak reflow
+(5)
+Op temp (°C) Part marking
+(6)
+TMP112AIDRLR Active Production SOT-5X3 (DRL) | 6 4000 | LARGE T&R Yes NIPDAU | NIPDAUAG Level-1-260C-UNLIM -40 to 125 OBS
+TMP112AIDRLR.A Active Production SOT-5X3 (DRL) | 6 4000 | LARGE T&R Yes NIPDAU Level-1-260C-UNLIM -40 to 125 OBS
+TMP112AIDRLR.B Active Production SOT-5X3 (DRL) | 6 4000 | LARGE T&R Yes NIPDAU Level-1-260C-UNLIM -40 to 125 OBS
+TMP112BIDRLR Active Production SOT-5X3 (DRL) | 6 4000 | LARGE T&R Yes NIPDAU | NIPDAUAG Level-1-260C-UNLIM -40 to 125 1B8
+TMP112BIDRLR.A Active Production SOT-5X3 (DRL) | 6 4000 | LARGE T&R Yes NIPDAU Level-1-260C-UNLIM -40 to 125 1B8
+TMP112BIDRLR.B Active Production SOT-5X3 (DRL) | 6 4000 | LARGE T&R Yes NIPDAU Level-1-260C-UNLIM -40 to 125 1B8
+TMP112D0IDPWR Active Production X2SON (DPW) | 5 3000 | LARGE T&R Yes NIPDAU Level-1-260C-UNLIM -40 to 125 M
+TMP112D0IDPWR.A Active Production X2SON (DPW) | 5 3000 | LARGE T&R Yes NIPDAU Level-1-260C-UNLIM -40 to 125 M
+TMP112D1IDPWR Active Production X2SON (DPW) | 5 3000 | LARGE T&R Yes NIPDAU Level-1-260C-UNLIM -40 to 125 N
+TMP112D1IDPWR.A Active Production X2SON (DPW) | 5 3000 | LARGE T&R Yes NIPDAU Level-1-260C-UNLIM -40 to 125 N
+TMP112D2IDPWR Active Production X2SON (DPW) | 5 3000 | LARGE T&R Yes NIPDAU Level-1-260C-UNLIM -40 to 125 O
+TMP112D2IDPWR.A Active Production X2SON (DPW) | 5 3000 | LARGE T&R Yes NIPDAU Level-1-260C-UNLIM -40 to 125 O
+TMP112D3IDPWR Active Production X2SON (DPW) | 5 3000 | LARGE T&R Yes NIPDAU Level-1-260C-UNLIM -40 to 125 P
+TMP112D3IDPWR.A Active Production X2SON (DPW) | 5 3000 | LARGE T&R Yes NIPDAU Level-1-260C-UNLIM -40 to 125 P
+TMP112DIDPWR Active Production X2SON (DPW) | 5 3000 | LARGE T&R Yes NIPDAU Level-1-260C-UNLIM -40 to 125 L
+TMP112DIDPWR.A Active Production X2SON (DPW) | 5 3000 | LARGE T&R Yes NIPDAU Level-1-260C-UNLIM -40 to 125 L
+TMP112NAIDRLR Active Production SOT-5X3 (DRL) | 6 4000 | LARGE T&R Yes NIPDAU | NIPDAUAG Level-1-260C-UNLIM -40 to 125 1AB
+TMP112NAIDRLR.A Active Production SOT-5X3 (DRL) | 6 4000 | LARGE T&R Yes NIPDAU Level-1-260C-UNLIM -40 to 125 1AB
+TMP112NAIDRLR.B Active Production SOT-5X3 (DRL) | 6 4000 | LARGE T&R Yes NIPDAU Level-1-260C-UNLIM -40 to 125 1AB
+TMP112NAIDRLT Obsolete Production SOT-5X3 (DRL) | 6 - - Call TI Call TI -40 to 125 1AB
+ 
+(1) Status:  For more details on status, see our product life cycle.
+ 
+(2) Material type:  When designated, preproduction parts are prototypes/experimental devices, and are not yet approved or released for full production. Testing and final process, including without limitation quality assurance,
+reliability performance testing, and/or process qualification, may not yet be complete, and this item is subject to further changes or possible discontinuation. If available for ordering, purchases will be subject to an additional
+waiver at checkout, and are intended for early internal evaluation purposes only. These items are sold without warranties of any kind.
+ 
+(3) RoHS values:  Yes, No, RoHS Exempt. See the TI RoHS Statement for additional information and value definition.
+ 
+Addendum-Page 1
+
+PACKAGE OPTION ADDENDUM
+www.ti.com 17-Sep-2026
+(4) Lead finish/Ball material:  Parts may have multiple material finish options. Finish options are separated by a vertical ruled line. Lead finish/Ball material values may wrap to two lines if the finish value exceeds the maximum
+column width.
+ 
+(5) MSL rating/Peak reflow:  The moisture sensitivity level ratings and peak solder (reflow) temperatures. In the event that a part has multiple moisture sensitivity ratings, only the lowest level per JEDEC standards is shown.
+Refer to the shipping label for the actual reflow temperature that will be used to mount the part to the printed circuit board.
+ 
+(6) Part marking:  There may be an additional marking, which relates to the logo, the lot trace code information, or the environmental category of the part.
+ 
+Multiple part markings will be inside parentheses. Only one part marking contained in parentheses and separated by a "~" will appear on a part. If a line is indented then it is a continuation of the previous line and the two
+combined represent the entire part marking for that device.
+ 
+Important Information and Disclaimer:The information provided on this page represents TI's knowledge and belief as of the date that it is provided. TI bases its knowledge and belief on information provided by third parties, and
+makes no representation or warranty as to the accuracy of such information. Efforts are underway to better integrate information from third parties. TI has taken and continues to take reasonable steps to provide representative
+and accurate information but may not have conducted destructive testing or chemical analysis on incoming materials and chemicals. TI and TI suppliers consider certain information to be proprietary, and thus CAS numbers
+and other limited information may not be available for release.
+ 
+In no event shall TI's liability arising out of such information exceed the total purchase price of the TI part(s) at issue in this document sold by TI to Customer on an annual basis.
+ 
+ OTHER QUALIFIED VERSIONS OF TMP112, TMP112D :
+•Automotive : TMP112-Q1, TMP112D-Q1
+ NOTE: Qualified Version Definitions:
+•Automotive - Q100 devices qualified for high-reliability automotive applications targeting zero defects
+Addendum-Page 2
+
+IMPORTANT NOTICE AND DISCLAIMER
+TI PROVIDES TECHNICAL AND RELIABILITY DATA (INCLUDING DATASHEETS), DESIGN RESOURCES (INCLUDING REFERENCE 
+DESIGNS), APPLICATION OR OTHER DESIGN ADVICE, WEB TOOLS, SAFETY INFORMATION, AND OTHER RESOURCES “AS IS” 
+AND WITH ALL FAULTS, AND DISCLAIMS ALL WARRANTIES, EXPRESS AND IMPLIED, INCLUDING WITHOUT LIMITATION ANY 
+IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT OF THIRD 
+PARTY INTELLECTUAL PROPERTY RIGHTS.
+These resources are intended for skilled developers designing with TI products. You are solely responsible for (1) selecting the appropriate 
+TI products for your application, (2) designing, validating and testing your application, and (3) ensuring your application meets applicable 
+standards, and any other safety, security, regulatory or other requirements.
+These resources are subject to change without notice. TI grants you permission to use these resources only for development of an 
+application that uses the TI products described in the resource. Other reproduction and display of these resources is prohibited. No license 
+is granted to any other TI intellectual property right or to any third party intellectual property right. TI disclaims responsibility for, and you fully 
+indemnify TI and its representatives against any claims, damages, costs, losses, and liabilities arising out of your use of these resources.
+TI’s products are provided subject to TI’s Terms of Sale, TI’s General Quality Guidelines, or other applicable terms available either on 
+ti.com or provided in conjunction with such TI products. TI’s provision of these resources does not expand or otherwise alter TI’s applicable 
+warranties or warranty disclaimers for TI products. Unless TI explicitly designates a product as custom or customer-specified, TI products 
+are standard, catalog, general purpose devices.
+TI objects to and rejects any additional or different terms you may propose.
+IMPORTANT NOTICE
+Copyright © 2026, Texas Instruments Incorporated
+Last updated 10/2025

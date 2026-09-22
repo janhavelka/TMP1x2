@@ -1,0 +1,221 @@
+{
+  "retrieved_date": "2026-09-22",
+  "description": "Official TI documentation and reference code; original licenses retained. Derived extracts indicated explicitly.",
+  "artifacts": [
+    {
+      "file": "mavrk/_t_m_p112___p_c___interface_8h_source.html",
+      "url": "https://software-dl.ti.com/analog/analog_public_sw/MAVRK/latest/API_Documentation/Advanced_Documentation/html/_t_m_p112___p_c___interface_8h_source.html",
+      "version": "Doxygen snapshot generated 2012-03-28",
+      "bytes": 30964,
+      "sha256": "9b7546096789a6b7cef5034fa25f8f63d8c542beb75e89612923a79fc414886f"
+    },
+    {
+      "file": "mavrk/_t_m_p112___p_c___interface___command___decode_8c.html",
+      "url": "https://software-dl.ti.com/analog/analog_public_sw/MAVRK/latest/API_Documentation/Advanced_Documentation/html/_t_m_p112___p_c___interface___command___decode_8c.html",
+      "version": "Doxygen snapshot generated 2012-03-28",
+      "bytes": 21008,
+      "sha256": "d698371ced4c65a7fdba935a4687552edcfa09e3267768d8745bac6e19790567"
+    },
+    {
+      "file": "mavrk/_t_m_p112___temp___sensor_8c.html",
+      "url": "https://software-dl.ti.com/analog/analog_public_sw/MAVRK/latest/API_Documentation/Advanced_Documentation/html/_t_m_p112___temp___sensor_8c.html",
+      "version": "Doxygen snapshot generated 2012-03-28",
+      "bytes": 70581,
+      "sha256": "e071801237a2256d2e8b5fc25b3c4647b89289294aac4b00f12bc31cbf37ab22"
+    },
+    {
+      "file": "mavrk/_t_m_p112___temp___sensor_8h.html",
+      "url": "https://software-dl.ti.com/analog/analog_public_sw/MAVRK/latest/API_Documentation/Advanced_Documentation/html/_t_m_p112___temp___sensor_8h.html",
+      "version": "Doxygen snapshot generated 2012-03-28",
+      "bytes": 107562,
+      "sha256": "525f7f4ae3e0a7fb1a5372a8a7e743b669c5167644cca81ccad3b12bf8b8fcdc"
+    },
+    {
+      "file": "mavrk/_t_m_p112___temp___sensor_8h_source.html",
+      "url": "https://software-dl.ti.com/analog/analog_public_sw/MAVRK/latest/API_Documentation/Advanced_Documentation/html/_t_m_p112___temp___sensor_8h_source.html",
+      "version": "Doxygen snapshot generated 2012-03-28",
+      "bytes": 54139,
+      "sha256": "a3faa97f34a08c432fca36d05569494f6a7fb85db0997aa571c2f3e8e00a3d26"
+    },
+    {
+      "file": "mavrk/init___t_m_p112_8c.html",
+      "url": "https://software-dl.ti.com/analog/analog_public_sw/MAVRK/latest/API_Documentation/Advanced_Documentation/html/init___t_m_p112_8c.html",
+      "version": "Doxygen snapshot generated 2012-03-28",
+      "bytes": 20706,
+      "sha256": "a5c9d11cfb5c849a1abd1c7de3e8f4e038f7b99af63865e5960e09330aec7c85"
+    },
+    {
+      "file": "sbaa588a.pdf",
+      "url": "https://www.ti.com/lit/an/sbaa588a/sbaa588a.pdf",
+      "version": "SBAA588A, January 2025",
+      "bytes": 510174,
+      "sha256": "030ca48a844df836f6268e2960b2ea1fdf073eba07ee693b404303efa7848e50"
+    },
+    {
+      "file": "sboc486-download-page.html",
+      "url": "https://www.ti.com/lit/zip/sboc486",
+      "version": "Download migration page, fetched 2026-09-22",
+      "bytes": 21155,
+      "sha256": "8571f3d45661a59e357e7e935eaa109ca00b0d78db7541d822759a07d5b9336b"
+    },
+    {
+      "file": "sboc486-example.ino",
+      "url": "https://www.ti.com/tool/download/SBOC486/01.00.00.00",
+      "version": "01.00.00.00, 2017-10-22",
+      "derived_from": "sboc486.zip",
+      "transformation": "Unchanged TMP102_Arduino_Example_Code_1.0/TMP102_Arduino_Example_Code_1.0.ino extracted from archive",
+      "bytes": 3548,
+      "sha256": "4b21a1ce710c77e8bcf3502553c1a63b3b878680c8eb13453fa7114abffaa0bc"
+    },
+    {
+      "file": "sboc486.zip",
+      "url": "https://dr-download.ti.com/software-development/code-example-or-demo/MD-Lm7FP7N9IF/01.00.00.00/sboc486.zip?download=true",
+      "version": "01.00.00.00, 2017-10-22",
+      "bytes": 53795,
+      "sha256": "c58fa024b0580bf3f2abb27dff076344f1b5de79c1e19570da4a15ac7a319411"
+    },
+    {
+      "file": "ti-e2e/tmp102-em-transition.html",
+      "url": "https://e2e.ti.com/support/sensors-group/sensors/f/sensors-forum/503810/tmp102-takes-5-10-seconds-before-giving-valid-13-bits-temperature-reading?ReplyFilter=Answers&ReplySortBy=Answers&ReplySortOrder=Descending",
+      "canonical_url": "https://e2e.ti.com/support/sensors-group/sensors/f/sensors-forum/503810/tmp102-takes-5-10-seconds-before-giving-valid-13-bits-temperature-reading",
+      "version": "TI E2E support discussion snapshot, 2026-09-22",
+      "bytes": 184411,
+      "sha256": "ff0dfb11576576c8512659b55e60752a1565ce9176984deb0ef47a203d2b2d30"
+    },
+    {
+      "file": "ti-e2e/tmp112-em-transition.html",
+      "url": "https://e2e.ti.com/support/sensors-group/sensors/f/sensors-forum/526611/possible-bug-in-the-tmp112-em-mode?ReplyFilter=Answers&ReplySortBy=Answers&ReplySortOrder=Descending",
+      "canonical_url": "https://e2e.ti.com/support/sensors-group/sensors/f/sensors-forum/526611/possible-bug-in-the-tmp112-em-mode",
+      "version": "TI E2E support discussion snapshot, 2026-09-22",
+      "bytes": 139203,
+      "sha256": "6d88c24a530faf1a6a85a12cdbbeaf9bf857475f0fa61513c48c7ab5fa2e9f8d"
+    },
+    {
+      "file": "ti-linux/COPYING",
+      "url": "https://raw.githubusercontent.com/TexasInstruments/ti-linux-kernel/fff856a50d43288671eaa733f9f59aa25f2fed77/COPYING",
+      "version": "fff856a50d43288671eaa733f9f59aa25f2fed77",
+      "bytes": 496,
+      "sha256": "fb5a425bd3b3cd6071a3a9aff9909a859e7c1158d54d32e07658398cd67eb6a0"
+    },
+    {
+      "file": "ti-linux/Documentation/devicetree/bindings/hwmon/lm75.yaml",
+      "url": "https://raw.githubusercontent.com/TexasInstruments/ti-linux-kernel/fff856a50d43288671eaa733f9f59aa25f2fed77/Documentation/devicetree/bindings/hwmon/lm75.yaml",
+      "version": "fff856a50d43288671eaa733f9f59aa25f2fed77",
+      "bytes": 2024,
+      "sha256": "aebb1417371de4f507f0fb9975dfff0edbcdf788b6a3f8f6f2b421c1f721dde0"
+    },
+    {
+      "file": "ti-linux/Documentation/devicetree/bindings/hwmon/ti,tmp102.yaml",
+      "url": "https://raw.githubusercontent.com/TexasInstruments/ti-linux-kernel/fff856a50d43288671eaa733f9f59aa25f2fed77/Documentation/devicetree/bindings/hwmon/ti,tmp102.yaml",
+      "version": "fff856a50d43288671eaa733f9f59aa25f2fed77",
+      "bytes": 1080,
+      "sha256": "b8d235dca956039d9d01d1a96c15dbb5a7dee8bcbe3f9ce2cf91c6eba3af7ab5"
+    },
+    {
+      "file": "ti-linux/Documentation/hwmon/lm75.rst",
+      "url": "https://raw.githubusercontent.com/TexasInstruments/ti-linux-kernel/fff856a50d43288671eaa733f9f59aa25f2fed77/Documentation/hwmon/lm75.rst",
+      "version": "fff856a50d43288671eaa733f9f59aa25f2fed77",
+      "bytes": 4733,
+      "sha256": "fcaa8ff8b3d6c7a202625fd2012aa515ef087301e98e98c07ae52ef8188cbd69"
+    },
+    {
+      "file": "ti-linux/Documentation/hwmon/tmp102.rst",
+      "url": "https://raw.githubusercontent.com/TexasInstruments/ti-linux-kernel/fff856a50d43288671eaa733f9f59aa25f2fed77/Documentation/hwmon/tmp102.rst",
+      "version": "fff856a50d43288671eaa733f9f59aa25f2fed77",
+      "bytes": 938,
+      "sha256": "c684629937f12848dbe0e9af5358a904396970a6267affa4d7075b4491bcb8f7"
+    },
+    {
+      "file": "ti-linux/LICENSES/preferred/GPL-2.0",
+      "url": "https://raw.githubusercontent.com/TexasInstruments/ti-linux-kernel/fff856a50d43288671eaa733f9f59aa25f2fed77/LICENSES/preferred/GPL-2.0",
+      "version": "fff856a50d43288671eaa733f9f59aa25f2fed77",
+      "bytes": 18600,
+      "sha256": "8780e78a1a737e127f25a65f6d95269bffd36158dc261114de7859b490bfc5aa"
+    },
+    {
+      "file": "ti-linux/drivers/hwmon/lm75.c",
+      "url": "https://raw.githubusercontent.com/TexasInstruments/ti-linux-kernel/fff856a50d43288671eaa733f9f59aa25f2fed77/drivers/hwmon/lm75.c",
+      "version": "fff856a50d43288671eaa733f9f59aa25f2fed77",
+      "bytes": 28697,
+      "sha256": "61fb4ca2f9d699ec0236d41050fd61ed1e184dbbad6a11b11174645c3fcb8cad"
+    },
+    {
+      "file": "ti-linux/drivers/hwmon/lm75.h",
+      "url": "https://raw.githubusercontent.com/TexasInstruments/ti-linux-kernel/fff856a50d43288671eaa733f9f59aa25f2fed77/drivers/hwmon/lm75.h",
+      "version": "fff856a50d43288671eaa733f9f59aa25f2fed77",
+      "bytes": 1120,
+      "sha256": "399bd7b2dab163fe01909742d87cc5f8b1a9830ee1b0ae8766cf7dd04307716d"
+    },
+    {
+      "file": "ti-linux/drivers/hwmon/tmp102.c",
+      "url": "https://raw.githubusercontent.com/TexasInstruments/ti-linux-kernel/fff856a50d43288671eaa733f9f59aa25f2fed77/drivers/hwmon/tmp102.c",
+      "version": "fff856a50d43288671eaa733f9f59aa25f2fed77",
+      "bytes": 8321,
+      "sha256": "573a7dcbe206b9c03fc2916b9c6e5c65c4c5bda113e6dca322d501a3790def7a"
+    },
+    {
+      "file": "tmp102-q1.pdf",
+      "url": "https://www.ti.com/lit/ds/symlink/tmp102-q1.pdf",
+      "version": "SBOS702E, September 2021",
+      "bytes": 1629677,
+      "sha256": "cb4e8939db3268f95e71d25a4c90fee00aa9020949fa5ae7b03af8b443aadfb5"
+    },
+    {
+      "file": "tmp102-q1.txt",
+      "url": "https://www.ti.com/lit/ds/symlink/tmp102-q1.pdf",
+      "version": "SBOS702E, September 2021",
+      "derived_from": "tmp102-q1.pdf",
+      "transformation": "Text extracted locally using pypdf",
+      "bytes": 64857,
+      "sha256": "1a252b2a67a4cce0cadc7e20b0bea007883f1b2b195edaab2ccdd9da88d1e1e9"
+    },
+    {
+      "file": "tmp102.pdf",
+      "url": "https://www.ti.com/lit/ds/symlink/tmp102.pdf",
+      "version": "SBOS397I, June 2024",
+      "bytes": 1151760,
+      "sha256": "c9da6620ef95f75ce94372f670a84d168e05922dd32cebfaa6517083f15ebfaf"
+    },
+    {
+      "file": "tmp102.txt",
+      "url": "https://www.ti.com/lit/ds/symlink/tmp102.pdf",
+      "version": "SBOS397I, June 2024",
+      "derived_from": "tmp102.pdf",
+      "transformation": "Text extracted locally using pypdf",
+      "bytes": 69763,
+      "sha256": "e101da80dcfa5e32d53b51707c0d470d13475d5ed21c05dc981bef37fc787a21"
+    },
+    {
+      "file": "tmp112-q1.pdf",
+      "url": "https://www.ti.com/lit/ds/symlink/tmp112-q1.pdf",
+      "version": "SLOS887H, August 2026",
+      "bytes": 1821072,
+      "sha256": "cbf1ddc44497eb7974e3de98369ecfea44e58b1d957c97202dd661410bb33364"
+    },
+    {
+      "file": "tmp112-q1.txt",
+      "url": "https://www.ti.com/lit/ds/symlink/tmp112-q1.pdf",
+      "version": "SLOS887H, August 2026",
+      "derived_from": "tmp112-q1.pdf",
+      "transformation": "Text extracted locally using pypdf",
+      "bytes": 92947,
+      "sha256": "c7aa6ac0649f904824fcb8771a5e1a6a7423769f1b193c61b66afb6ed9e6d006"
+    },
+    {
+      "file": "tmp112.pdf",
+      "url": "https://www.ti.com/lit/ds/symlink/tmp112.pdf",
+      "version": "SBOS473L, July 2024",
+      "bytes": 1786014,
+      "sha256": "c70ca5900fabd8990e735aff3bb5cddb0b6da113b4a472d208c9181e3eb1b385"
+    },
+    {
+      "file": "tmp112.txt",
+      "url": "https://www.ti.com/lit/ds/symlink/tmp112.pdf",
+      "version": "SBOS473L, July 2024",
+      "derived_from": "tmp112.pdf",
+      "transformation": "Text extracted locally using pypdf",
+      "bytes": 92694,
+      "sha256": "fd87796cdb3981132e44e7d11261911f47db3711488f6c047186f3179979a81d"
+    }
+  ]
+}

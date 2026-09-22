@@ -1,0 +1,36 @@
+name: CI
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - run: cmake -S . -B build -DTMP1X2_BUILD_TESTS=ON -DCMAKE_CXX_FLAGS="-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Werror -fsanitize=address,undefined"
+      - run: cmake --build build --parallel
+      - run: ctest --test-dir build --output-on-failure
+      - run: python3 tools/check_contracts.py
+  arduino:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        target: [esp32s2dev, esp32s3dev]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - run: python3 -m pip install platformio==6.1.19
+      - run: pio run -e ${{ matrix.target }}
+  esp-idf:
+    runs-on: ubuntu-24.04
+    container: espressif/idf:${{ matrix.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        version: [v5.3.2, v5.5.1, v6.0.1]
+        target: [esp32s2, esp32s3]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf.py -C examples/esp_idf/basic set-target ${{ matrix.target }} build

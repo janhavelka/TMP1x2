@@ -1,0 +1,5 @@
+version: "1.0.0"
+description: "Framework-neutral TI TMP102/TMP112 temperature sensor driver."
+license: "MIT"
+dependencies:
+  idf: ">=5.3.0"
