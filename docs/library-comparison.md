@@ -1,6 +1,6 @@
 # Local library comparison
 
-Inspected on 2026-09-22 in the sibling `Projects/` directory. The inventory covers every top-level standalone I2C library found by manifest and public-header inspection. Application repositories, archived copies, PlatformIO dependencies and worktrees are not counted as separate libraries.
+Re-audited on 2026-09-26 in the sibling `Projects/` directory. The inventory covers all 16 top-level standalone I2C libraries found by manifest and public-header inspection. Application repositories, archived copies, PlatformIO dependencies and worktrees are not counted as separate libraries. `EEPROM_24Cxx/` is currently empty. See the [audit findings and fixes](audit-2026-09-26.md).
 
 | Library | Device / protocol | Relevance to TMP102/TMP112 |
 | --- | --- | --- |
@@ -13,6 +13,7 @@ Inspected on 2026-09-22 in the sibling `Projects/` directory. The inventory cove
 | LDC1614 | TI inductance converter; 16-bit registers | Typed chip variants, externally driven cooperative operations |
 | LSM6DS3TR | IMU; byte registers and FIFO | Framework-neutral callbacks, operation/configuration state |
 | MB85RC | I2C FRAM family | External ownership and partial-write reporting; memory semantics differ |
+| 24Cxx | I2C EEPROM family | Shared CLI, strict numeric/input parsing, native-IDF packaging; page-write and write-cycle semantics differ |
 | MCP45HVX1 | Digital potentiometer | Typed register API, bounded poll jobs |
 | PCA9555 | GPIO expander | External ownership, separate transport/write-effect state |
 | RV3032-C7 | RTC with temperature measurement | Common Status/Config layout and health; RTC persistence differs |
@@ -30,11 +31,11 @@ OPT4001 supplies the repository shape and terminal presentation. ADS1115 supplie
 - C++17 core without Arduino, ESP-IDF, FreeRTOS, logging, platform timing, allocation, bus handles or pins. Example adapters own those resources.
 - `Status { Err code; int32_t detail; const char* msg; }`, static message strings, `ok()`, `is()`, `inProgress()`, explicit bool, `Ok()` and `Error()` factories. Typed `enum class ... : uint8_t`, uppercase enum values/constants, camelCase methods and fields, `_camelCase` members.
 - `I2cWriteFn = Status (*)(uint8_t, const uint8_t*, size_t, uint32_t timeoutMs, void*)`; `I2cWriteReadFn` adds TX/RX buffers and lengths and performs one atomic repeated-start transfer. Caller owns locking, bus lifecycle, pins, clock frequency, timeout enforcement, scheduling and recovery. Preserve meaningful transport errors; do not invent NACK phase information.
-- Bus-silent binding and end/cancellation; one cooperative operation per instance, caller-driven bounded polls and explicit waits. Synchronous convenience helpers must document their finite transfer bounds. No automatic general-call reset or hidden retry.
+- Bus-silent binding, admission, cancellation and end; one owner operation per instance with caller-driven polls. Initialization, configuration, recovery, shutdown and read jobs have transfer budgets, deadlines and retained results. Synchronous conveniences share the same configuration state machine. See [owner operations](owner-operations.md) and [integration](integration.md). No automatic general-call reset or hidden retry.
 - Four health states: `UNINIT`, `READY`, `DEGRADED`, `OFFLINE`; saturating success/failure counters, consecutive failures, last success/error times and last error. Configuration trust is separate from transport health. Diagnostic probes do not alter tracked driver health. Bus-adapter counters include diagnostic traffic and therefore differ from driver counters.
 - OPT4001 help uses cyan `=== TMP1x2 CLI Help ===`, green `[Common]`, `[Data]`, `[Configuration]`, `[Registers]`, `[Diagnostics]` sections; cyan left-aligned command column width 32; plain descriptions; prompt `> `. ANSI reset `ESC[0m`, red 31, green 32, yellow 33, blue 34, cyan 36, gray 90. `color [0|1|off|on]` disables all ANSI styling. Severity tags alone are colored. Health is green for READY, yellow for degraded/uninitialized, red for offline/errors.
-- Common CLI aliases include `help/?`, `version/ver`, `init/begin`, `drv/health`, `cfg/settings`, `reg/rreg`, plus scan, probe, recover, end, cached sample, finite watch/stress, stop and raw register diagnostics. Chip-specific commands follow actual TMP capabilities; no fictitious chip ID or CRC command.
+- Common CLI aliases include `help/?`, `version/ver`, `init/begin`, `drv/health`, `cfg/settings`, `reg/rreg`, plus scan, probe, recover, end, cached sample, finite watch/stress, stop and raw register diagnostics. Job/result/cancel commands expose cooperative progress; quiet mode, run statistics, counter reset and optional ALERT GPIO mirror peer diagnostics. Chip-specific commands follow actual TMP capabilities; no fictitious chip ID or CRC command.
 - Native IDF examples use `app_main`, `driver/i2c_master.h`, `esp_timer` and task timing; no Arduino compatibility layer. Both adapters exercise the same command processor.
 - Sibling build conventions: `library.json` as version source, generated version header and component manifest, C++17 CMake component, PlatformIO S2/S3 Arduino environments and native tests, Windows `scripts/pio.cmd`, explicit framework-free compilation, CLI-contract checks. Hardware validation is a separate claim from builds and simulated transport tests.
 
-These sibling libraries deliberately differ in legacy health gating and cooperative method names. Matching every historical API byte-for-byte is neither possible nor appropriate; TMP1x2 follows the common conventions while keeping its sensor-specific protocol explicit.
+These sibling libraries deliberately differ in health gating and cooperative method names. Some use a latched OFFLINE state; LDC1614 and LSM6DS3TR expose transport statistics alongside separate operation/configuration state. Status enum ordinals are not a shared ABI, and device-specific errors vary. Matching every historical API byte-for-byte is neither possible nor appropriate; TMP1x2 follows the common conventions while keeping its sensor-specific protocol explicit.

@@ -6,6 +6,8 @@ namespace TMP1x2 { namespace cmd {
 static constexpr uint8_t I2C_ADDR_DEFAULT = 0x48;
 static constexpr uint8_t I2C_ADDR_MIN = 0x48;
 static constexpr uint8_t I2C_ADDR_MAX = 0x4B;
+static constexpr uint8_t I2C_ADDR_TMP112D_MIN = 0x40;
+static constexpr uint8_t I2C_ADDR_TMP112D_MAX = 0x43;
 static constexpr uint8_t REG_TEMPERATURE = 0x00;
 static constexpr uint8_t REG_CONFIG = 0x01;
 static constexpr uint8_t REG_TLOW = 0x02;

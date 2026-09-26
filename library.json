@@ -9,6 +9,6 @@
   "build": {"includeDir": "include", "srcDir": "src"},
   "export": {
     "include": ["include/**", "src/**", "examples/**", "library.json", "idf_component.yml", "CMakeLists.txt", "LICENSE", "README.md", "CHANGELOG.md", "docs/*.md", "docs/reference/README.md"],
-    "exclude": ["examples/**/build*/**", "examples/**/sdkconfig", "examples/**/sdkconfig.old", "examples/**/dependencies.lock", "examples/**/managed_components/**"]
+    "exclude": ["examples/**/build*/**", "examples/**/.pio/**", "examples/**/sdkconfig", "examples/**/sdkconfig.old", "examples/**/sdkconfig.esp32*", "examples/**/dependencies.lock", "examples/**/managed_components/**", "examples/**/*.log"]
   }
 }

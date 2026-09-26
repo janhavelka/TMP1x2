@@ -20,6 +20,11 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       - run: python3 -m pip install platformio==6.1.19
       - run: pio run -e ${{ matrix.target }}
+      - if: matrix.target == 'esp32s3dev'
+        run: |
+          mkdir -p build
+          pio pkg pack -o build/TMP1x2.tar.gz .
+          python3 tools/check_package.py build/TMP1x2.tar.gz
   esp-idf:
     runs-on: ubuntu-24.04
     container: espressif/idf:${{ matrix.version }}

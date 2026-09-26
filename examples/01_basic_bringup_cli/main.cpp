@@ -7,6 +7,7 @@
 #if defined(ESP32)
 #include <esp_system.h>
 #include <esp_arduino_version.h>
+#include <driver/gpio.h>
 #endif
 #include "../common/BoardConfig.h"
 #include "../common/Tmp1x2Cli.h"
@@ -71,12 +72,24 @@ void output(void*, const char* format, va_list args) {
       static_cast<size_t>(length) < sizeof(buffer) ? static_cast<size_t>(length) : sizeof(buffer) - 1);
 }
 tmp1x2_cli::TransferStats stats(void*) { return transfers; }
+void resetStats(void*) { transfers = tmp1x2_cli::TransferStats{}; }
+bool alertLevel(int pin, void*) { return digitalRead(static_cast<uint8_t>(pin)) != LOW; }
+bool validAlertPin(int pin) {
+#if defined(ESP32)
+  return pin >= 0 && pin < GPIO_NUM_MAX && GPIO_IS_VALID_GPIO(pin);
+#else
+  return pin >= 0 && pin <= UINT8_MAX;
+#endif
+}
 }  // namespace
 
 void setup() {
   Serial.begin(board::SERIAL_BAUD);
   const uint32_t started = millis();
   while (!Serial && millis() - started < 3000U) delay(10);
+  if (board::ALERT_PIN >= 0 && !validAlertPin(board::ALERT_PIN)) {
+    Serial.println("[E] Invalid ALERT input configuration"); return;
+  }
   if (!Wire.begin(board::I2C_SDA, board::I2C_SCL, board::I2C_FREQUENCY_HZ)) {
     Serial.println("[E] Application failed to initialize I2C");
     return;
@@ -87,11 +100,17 @@ void setup() {
   config.nowMs = nowMs;
   config.cooperativeYield = cooperativeYield;
   config.i2cTimeoutMs = board::I2C_TIMEOUT_MS;
+  if (board::ALERT_PIN >= 0) {
+    pinMode(static_cast<uint8_t>(board::ALERT_PIN), INPUT);
+    config.alertPin = board::ALERT_PIN;
+    config.gpioRead = alertLevel;
+  }
   tmp1x2_cli::Platform platform{};
   platform.vprintf = output;
   platform.nowMs = nowMs;
   platform.probeAddress = probe;
   platform.transferStats = stats;
+  platform.resetTransferStats = resetStats;
   platform.framework = "Arduino-ESP32";
 #ifdef ESP_ARDUINO_VERSION_STR
   platform.frameworkVersion = ESP_ARDUINO_VERSION_STR;

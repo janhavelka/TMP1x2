@@ -15,17 +15,35 @@ using I2cWriteReadFn = Status (*)(uint8_t, const uint8_t*, size_t, uint8_t*, siz
 using NowMsFn = uint32_t (*)(void*);
 using YieldFn = void (*)(void*);
 using GpioReadFn = bool (*)(int, void*);
-/// Explicit BOM choice; neither part contains a readable device identifier.
-/// Supports classic 0x48..0x4B parts. TMP112D address-select 0x40..0x43 variants
-/// are outside this API's scope and rejected by address validation.
-enum class Model : uint8_t { TMP102 = 0, TMP112 = 1 };
+/// Explicit BOM/package choice; these parts have no readable device identifier.
+/// TMP112 includes classic SOT563 and fixed-address X2SON ALERT variants at
+/// 0x48..0x4B. TMP112D_ADDRESS_SELECT is specifically X2SON with ADD0 instead
+/// of ALERT (0x40..0x43), not every ordering code containing "TMP112D".
+enum class Model : uint8_t { TMP102 = 0, TMP112 = 1, TMP112D_ADDRESS_SELECT = 2 };
+constexpr bool isValidModel(Model model) {
+  return model == Model::TMP102 || model == Model::TMP112 ||
+         model == Model::TMP112D_ADDRESS_SELECT;
+}
+constexpr uint8_t modelAddressMin(Model model) {
+  return model == Model::TMP112D_ADDRESS_SELECT ? 0x40 : isValidModel(model) ? 0x48 : 0;
+}
+constexpr uint8_t modelAddressMax(Model model) {
+  return model == Model::TMP112D_ADDRESS_SELECT ? 0x43 : isValidModel(model) ? 0x4B : 0;
+}
+constexpr bool isValidAddress(Model model, uint8_t address) {
+  return isValidModel(model) && address >= modelAddressMin(model) && address <= modelAddressMax(model);
+}
+constexpr bool hasAlertOutput(Model model) {
+  return model == Model::TMP102 || model == Model::TMP112;
+}
 enum class Mode : uint8_t { CONTINUOUS = 0, SHUTDOWN = 1 };
 enum class ConversionRate : uint8_t { HZ_0_25 = 0, HZ_1 = 1, HZ_4 = 2, HZ_8 = 3 };
 enum class AlertMode : uint8_t { COMPARATOR = 0, INTERRUPT_MODE = 1 };
 enum class AlertPolarity : uint8_t { ACTIVE_LOW = 0, ACTIVE_HIGH = 1 };
 enum class FaultQueue : uint8_t { FAULTS_1 = 0, FAULTS_2 = 1, FAULTS_4 = 2, FAULTS_6 = 3 };
 constexpr const char* toString(Model v) {
-  return v == Model::TMP102 ? "TMP102" : v == Model::TMP112 ? "TMP112" : "UNKNOWN";
+  return v == Model::TMP102 ? "TMP102" : v == Model::TMP112 ? "TMP112" :
+         v == Model::TMP112D_ADDRESS_SELECT ? "TMP112D_ADDRESS_SELECT" : "UNKNOWN";
 }
 constexpr const char* toString(Mode v) {
   return v == Mode::CONTINUOUS ? "CONTINUOUS" : v == Mode::SHUTDOWN ? "SHUTDOWN" : "UNKNOWN";
@@ -49,14 +67,14 @@ struct Config {
   I2cWriteReadFn i2cWriteRead = nullptr;
   void* i2cUser = nullptr;
   /// Optional authoritative unsigned monotonic clock; wraparound supported.
-  /// Without it tick(nowMs) supplies the clock and blocking reads are disabled.
+  /// Without it tick(nowMs)/poll(nowMs) supply the clock and blocking reads are disabled.
   /// An actual EM change or continuous-to-shutdown transition requires nowMs
   /// so synchronous configuration can settle in-flight conversions safely.
   NowMsFn nowMs = nullptr;
   YieldFn cooperativeYield = nullptr;
   void* timeUser = nullptr;
   Model model = Model::TMP102;
-  uint8_t i2cAddress = 0x48;
+  uint8_t i2cAddress = 0x48; ///< Use 0x40..0x43 with TMP112D_ADDRESS_SELECT.
   uint32_t i2cTimeoutMs = 50;
   Mode mode = Mode::CONTINUOUS;
   ConversionRate conversionRate = ConversionRate::HZ_4;
@@ -69,7 +87,7 @@ struct Config {
   /// ranges do not expand the device's specified measurement accuracy/range.
   float lowThresholdC = 75.0f;
   float highThresholdC = 80.0f;
-  int alertPin = -1;
+  int alertPin = -1; ///< Optional physical ALERT input; unavailable on TMP112D_ADDRESS_SELECT.
   GpioReadFn gpioRead = nullptr;
   void* gpioUser = nullptr;
   /// Zero normalized to one by bind()/begin().

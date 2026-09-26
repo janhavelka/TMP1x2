@@ -282,6 +282,14 @@ def _expected_outputs(project_root: Path) -> Dict[Path, str]:
             f'version: "{version}"',
         )
 
+    cmake = project_root / "CMakeLists.txt"
+    if cmake.exists():
+        outputs[cmake] = replace_required(
+            cmake,
+            r'^(\s*project\(TMP1x2 VERSION )\d+\.\d+\.\d+( LANGUAGES CXX\))$',
+            rf'\g<1>{version}\g<2>',
+        )
+
     doxyfile = project_root / "Doxyfile"
     if doxyfile.exists():
         outputs[doxyfile] = replace_required(

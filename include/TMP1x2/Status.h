@@ -9,7 +9,8 @@ enum class Err : uint8_t {
   INVALID_PARAM, DEVICE_NOT_FOUND, CONFIG_MISMATCH,
   MEASUREMENT_NOT_READY, CONVERSION_NOT_READY = MEASUREMENT_NOT_READY,
   BUSY, IN_PROGRESS, I2C_NACK_ADDR, I2C_NACK_DATA, I2C_TIMEOUT, I2C_BUS,
-  OFFLINE, NOT_BOUND
+  OFFLINE, NOT_BOUND,
+  CANCELLED, OPERATION_TIMEOUT, RESULT_NOT_AVAILABLE, TOKEN_MISMATCH
 };
 constexpr const char* errorName(Err err) {
   switch (err) {
@@ -30,6 +31,10 @@ constexpr const char* errorName(Err err) {
     case Err::I2C_BUS: return "I2C_BUS";
     case Err::OFFLINE: return "OFFLINE";
     case Err::NOT_BOUND: return "NOT_BOUND";
+    case Err::CANCELLED: return "CANCELLED";
+    case Err::OPERATION_TIMEOUT: return "OPERATION_TIMEOUT";
+    case Err::RESULT_NOT_AVAILABLE: return "RESULT_NOT_AVAILABLE";
+    case Err::TOKEN_MISMATCH: return "TOKEN_MISMATCH";
   }
   return "UNKNOWN";
 }

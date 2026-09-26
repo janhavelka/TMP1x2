@@ -214,6 +214,136 @@ static void formatRecovery() {
     CHECK(!d.hardwareConfigDirty());
   }
 }
+static void observedFormatRecovery() {
+  // Reading changed EM is lasting evidence that TEMP can have a new marker
+  // with an old payload. Adopting that EM must still complete a fresh sample.
+  for (unsigned observer = 0; observer < 5; ++observer) {
+    for (unsigned restore = 0; restore < 2; ++restore) {
+      Bus b; t::TMP1x2 d; auto c = b.config();
+      if (observer >= 3) c.mode = t::Mode::SHUTDOWN;
+      CHECK(d.begin(c).ok());
+      if (observer == 4) CHECK(d.startOneShot().ok());
+      b.store(1, static_cast<uint16_t>(b.regs[1] | 0x10U));
+      // Keep the deliberate marker/payload mismatch observable for ready polls.
+      b.shot = false;
+      if (observer == 0) {
+        t::ConfigurationInfo info; CHECK(d.readConfiguration(info).ok());
+      } else if (observer == 1) {
+        float low = 0, high = 0; CHECK(d.readThresholds(low, high).ok());
+      } else if (observer == 2) {
+        CHECK(d.verifyConfiguration().is(t::Err::CONFIG_MISMATCH));
+      } else if (observer == 3) {
+        CHECK(d.startOneShot().is(t::Err::CONFIG_MISMATCH));
+      } else {
+        b.ms += 35U; bool ready = false;
+        CHECK(d.isConversionReady(ready).is(t::Err::CONFIG_MISMATCH));
+      }
+      CHECK(d.hardwareConfigDirty());
+      if (restore != 0) {
+        // A second outside change restores desired EM, but leaves a payload
+        // produced in the other format; matching CONFIG alone cannot prove it.
+        b.regs[0] = 0x0C81;
+        b.store(1, static_cast<uint16_t>(b.regs[1] & ~0x10U));
+        CHECK(d.recover().ok());
+      } else {
+        CHECK(d.setExtendedMode(true).ok());
+      }
+      t::Sample sample; CHECK(d.readSample(sample).ok());
+      CHECK(sample.celsius == 25.0f); CHECK(!d.hardwareConfigDirty());
+    }
+  }
+}
+static void sameFormatMismatchWithoutClock() {
+  Bus b; t::TMP1x2 d; auto c = b.config();
+  c.nowMs = nullptr; c.cooperativeYield = nullptr;
+  CHECK(d.begin(c).ok());
+  b.regs[1] ^= 0x40U;
+  t::ConfigurationInfo info; CHECK(d.readConfiguration(info).ok());
+  CHECK(d.hardwareConfigDirty()); CHECK(d.recover().ok());
+  b.regs[2] ^= 0x100U;
+  CHECK(d.verifyConfiguration().is(t::Err::CONFIG_MISMATCH));
+  CHECK(d.recover().ok()); CHECK(!d.hardwareConfigDirty());
+}
+static void observedTemperatureFormatRecovery() {
+  for (unsigned lifecycle = 0; lifecycle < 4; ++lifecycle) {
+    Bus b; t::TMP1x2 d; CHECK(d.begin(b.config()).ok());
+    b.store(1, static_cast<uint16_t>(b.regs[1] | 0x10U));
+    if (lifecycle == 3) b.regs[0] |= 2U; // Reserved-bit failure cannot erase EM evidence.
+    t::Sample sample; sample.celsius = 999.0f;
+    CHECK(d.readSample(sample).is(lifecycle == 3 ? t::Err::CONFIG_MISMATCH : t::Err::MEASUREMENT_NOT_READY));
+    CHECK(sample.celsius == 999.0f); CHECK(d.hardwareConfigDirty());
+    CHECK(d.hardwareConfigDirtyError().is(t::Err::CONFIG_MISMATCH));
+    CHECK(d.readSample(sample).is(t::Err::INVALID_CONFIG));
+    if (lifecycle == 0 || lifecycle == 3) {
+      CHECK(d.setExtendedMode(true).ok());
+    } else {
+      auto c = d.getConfig(); c.extendedMode = true;
+      if (lifecycle == 1) {
+        d.end(); CHECK(d.bind(c).ok()); CHECK(d.recover().ok());
+      } else {
+        CHECK(d.begin(c).ok());
+      }
+    }
+    CHECK(d.readSample(sample).ok()); CHECK(sample.celsius == 25.0f);
+    CHECK(!d.hardwareConfigDirty());
+  }
+}
+static void interruptedFormatObservation() {
+  for (unsigned observer = 0; observer < 3; ++observer) {
+    Bus b; t::TMP1x2 d; CHECK(d.begin(b.config()).ok());
+    b.store(1, static_cast<uint16_t>(b.regs[1] | 0x10U));
+    b.failAt = b.calls + (observer == 1 ? 3U : 2U);
+    if (observer < 2) {
+      float low = 999.0f, high = 999.0f;
+      CHECK(d.readThresholds(low, high).is(t::Err::I2C_TIMEOUT));
+      CHECK(low == 999.0f && high == 999.0f);
+    } else {
+      CHECK(d.recover().is(t::Err::I2C_TIMEOUT));
+    }
+    b.failAt = 0;
+    CHECK(d.setExtendedMode(true).ok());
+    t::Sample sample; CHECK(d.readSample(sample).ok());
+    CHECK(sample.celsius == 25.0f); CHECK(!d.hardwareConfigDirty());
+  }
+}
+static void formatPreconditionEvidence() {
+  Bus b; t::TMP1x2 d; auto c = b.config();
+  c.nowMs = nullptr; c.cooperativeYield = nullptr;
+  CHECK(d.begin(c).ok());
+  b.store(1, static_cast<uint16_t>(b.regs[1] | 0x10U));
+  const unsigned writes = b.writes;
+  CHECK(d.setConversionRate(t::ConversionRate::HZ_1).is(t::Err::INVALID_CONFIG));
+  CHECK(d.hardwareConfigDirty()); CHECK(b.writes == writes);
+  CHECK(d.setExtendedMode(true).is(t::Err::INVALID_CONFIG));
+  CHECK(d.hardwareConfigDirty()); CHECK(b.writes == writes);
+  c = d.getConfig(); c.nowMs = Bus::clock; c.cooperativeYield = Bus::yield;
+  CHECK(d.begin(c).ok());
+  t::Sample sample; CHECK(d.readSample(sample).ok());
+  CHECK(sample.celsius == 25.0f); CHECK(!d.hardwareConfigDirty());
+}
+static void formatFailureMatrix() {
+  for (unsigned initialExtended = 0; initialExtended < 2; ++initialExtended) {
+    Bus baseline; t::TMP1x2 good; auto c = baseline.config();
+    c.extendedMode = initialExtended != 0; CHECK(good.begin(c).ok());
+    const unsigned before = baseline.calls;
+    CHECK(good.setExtendedMode(initialExtended == 0).ok());
+    const unsigned count = baseline.calls - before;
+    for (unsigned at = 1; at <= count; ++at) {
+      for (unsigned accepted = 0; accepted < 2; ++accepted) {
+        Bus b; t::TMP1x2 d; c = b.config();
+        c.extendedMode = initialExtended != 0; CHECK(d.begin(c).ok());
+        b.failAt = b.calls + at; b.acceptFailedWrite = accepted != 0;
+        CHECK(d.setExtendedMode(initialExtended == 0).is(t::Err::I2C_TIMEOUT));
+        CHECK(d.hardwareConfigDirty()); CHECK(d.totalFailures() == 1U);
+        b.failAt = 0; CHECK(d.recover().ok());
+        t::Sample sample; CHECK(d.readSample(sample).ok());
+        CHECK(sample.extendedMode == (initialExtended == 0));
+        CHECK(sample.celsius == 25.0f); CHECK(!b.prematureEmChange);
+        CHECK(!d.hardwareConfigDirty());
+      }
+    }
+  }
+}
 static void failureMatrix() {
   Bus baseline; t::TMP1x2 good; CHECK(good.begin(baseline.config()).ok()); const unsigned count = baseline.calls;
   for (unsigned at = 1; at <= count; ++at) {
@@ -227,7 +357,12 @@ int main() {
   const Test tests[] = {{"decoding", decoding}, {"thresholds", thresholds}, {"validation", validation},
     {"lifecycle", lifecycle}, {"health", health}, {"dirty recovery", dirtyRecovery}, {"one-shot", oneShot},
     {"wraparound", wraparound}, {"extended and alert", extendedAndAlert}, {"initialization failure matrix", failureMatrix},
-    {"protocol and clock guards", protocolAndClockGuards}, {"partial format recovery", formatRecovery}};
+    {"protocol and clock guards", protocolAndClockGuards}, {"partial format recovery", formatRecovery},
+    {"observed format recovery", observedFormatRecovery}, {"same-format mismatch without clock", sameFormatMismatchWithoutClock},
+    {"observed temperature format recovery", observedTemperatureFormatRecovery},
+    {"interrupted format observation", interruptedFormatObservation},
+    {"format precondition evidence", formatPreconditionEvidence},
+    {"format transition failure matrix", formatFailureMatrix}};
   for (const auto& test : tests) { const int before = failures; test.run(); if (before == failures) std::printf("[PASS] %s\n", test.name); }
   return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

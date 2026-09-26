@@ -1,20 +1,24 @@
 # Validation results
 
-Local validation on 2026-09-22 (Windows, GCC 15.1 host compiler).
+Local validation on 2026-09-26 after the [cross-library audit](audit-2026-09-26.md).
+Windows host, GCC 15.1.0, Python 3.12.10, managed PlatformIO Core 6.1.19.
 
 | Check | Result |
 | --- | --- |
-| CMake native core regression suite | Passed, 12 test groups |
+| CMake/CTest | All seven entries passed: core, CLI, owner operations, model variants, framework-free headers, version synchronization and IDF component naming |
 | Exhaustive signed temperature decoding | Passed all 4,096 normal and 8,192 extended codes |
-| Shared CLI behavioral tests | Passed help/ANSI formatting, color-off, cached diagnostics, invalid arguments, overflow rejection |
+| Shared CLI behavioral tests | Passed help/ANSI, parsing, cooperative operations/cancellation, raw-health separation, GPIO/model switching, quiet statistics/counter reset, mixed stress in both modes, target binding, transient failures and watch stop/timeout/resumption |
 | Strict C++17 host warnings | Passed `-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Werror` |
-| PlatformIO native tests | Passed all 12 test groups |
-| Framework-free compile/link | Passed; no Arduino/Wire headers, including Xtensa macro-collision regression |
+| PlatformIO native tests | Passed all 18 test groups |
+| Cooperative owner API | Passed 14 independent groups covering admission, budgets, deadlines/wrap, staging, failure matrices, cancellation, retained results and passive health |
+| Model/address capabilities | Passed all 128 seven-bit addresses across three models, valid callback targets, rejected GPIO capability and preserved failed outputs |
+| Format-transition failure matrix | Passed all 44 cases: 11 callbacks in both directions, failing writes accepted/rejected by hardware |
+| Framework-free compile/link | Passed; no Arduino/Wire headers, including Xtensa INTERRUPT and Arduino LOW/HIGH macro-collision regressions |
 | Arduino ESP32-S3 and ESP32-S2 firmware | Compiled and linked with pioarduino 55.03.311 / Arduino 3.3.11 |
-| Native IDF example against real SDK headers | Passed S3 and S2 with bundled IDF 5.5.5 SDK headers, Arduino include paths/defines removed |
-| Standalone native ESP-IDF CMake/link | Not run locally: `idf.py`/standalone IDF unavailable |
-| Release metadata and core boundary checks | Passed |
-| PlatformIO release package | Created, checked and independently built with CMake; reference binaries and development tests excluded |
+| Native ESP-IDF ESP32-S3 and ESP32-S2 firmware | Full application/component compile/link, bootloader and binary generation using IDF 5.5.5 through managed PlatformIO |
+| Release metadata and core boundary checks | Passed, including CMake version synchronization |
+| PlatformIO release package | Required payload and exclusions inspected; isolated renamed CMake consumer compiled, linked and ran |
+| TI reference archive | All recorded SHA-256 hashes and artifact coverage checked; archive unchanged |
 | Physical sensor / ALERT / address straps | Not run; no hardware results claimed |
 
 Regression tests cover wire byte order and framing, signed conversion, threshold
@@ -26,14 +30,53 @@ each initialization transfer failing in turn. A dedicated device model reproduce
 TI's premature EM marker; a failure after EM changes must retain the fresh-
 conversion requirement through recovery.
 
-SDK-header compilation is a narrower check than a complete native-IDF build.
-The CI workflow adds native IDF 5.3.2, 5.5.1 and 6.0.1 builds for S2/S3, but these
-jobs have not been run remotely. Host ASan/UBSan are configured in Linux CI and
-are not claimed as locally run Windows sanitizer tests.
+New format-provenance tests first reproduced the erroneous 25 C to 50 C reading,
+then checked managed CONFIG observers, mismatched TEMP markers (including invalid
+reserved bits), interrupted threshold/recovery observations, absent clocks,
+adoption/restoration of EM and evidence retained through end/bind/begin. Unrelated
+same-format configuration mismatches still recover without a clock.
 
-Reproduce native checks with the commands in the root README. For the narrower
-SDK check, first generate the PlatformIO compilation database for the desired
-target, then run `python tools/check_idf_sdk_compile.py`. The SDK checker writes
-its response file under ignored `build/` and never links Arduino into IDF code.
+The owner-operation suite covers clock-hook and caller-time scheduling, callback
+timeout grants, deadline-capped next-poll hints, late sample rejection, zero
+transfer budget, immediate completion after the final callback, accepted/rejected
+partial writes in both EM directions, staged-profile cancellation, exact result
+identity, pending-result exclusion, and uncertainty retained after abandoning a
+manual one-shot. A stalled caller clock returns promptly without transfers during
+waits; the caller still owns advancing monotonic time.
 
-Hardware procedure: [hardware-validation.md](hardware-validation.md).
+The native IDF results are full application/component builds using `framework =
+espidf`, not SDK-header compilation or an Arduino compatibility layer. Both target
+configurations were checked for 4 MB flash and package version 1.0.0. The separate
+`idf.py` front end was not run locally. The earlier SDK-header-only validation is
+superseded by these local links. The IDF component naming regression is a CMake
+configure test and does not itself establish a native IDF link.
+
+CI is configured for native IDF 5.3.2, 5.5.1 and 6.0.1 on S2/S3, plus Linux
+ASan/UBSan and package checks. Remote CI and Linux sanitizer execution were not
+run in this session.
+
+Two initial-audit runs encountered transient missing-module errors in managed SCons
+(`win32` and `FortranCommon`). Rerunning the affected environment succeeded;
+no second PlatformIO Core or repository workaround was installed. The final S2
+IDF success is recorded separately in `build-audit/idf-final-s2.log`. The follow-up
+owner/CLI changes were rebuilt for all four firmware environments successfully;
+their final logs are `build-parity/arduino.log` and `build-parity/idf.log`.
+
+Reproduce the checks from the repository root:
+
+```powershell
+cmake -S . -B build-parity -G Ninja -DTMP1X2_BUILD_TESTS=ON "-DCMAKE_CXX_FLAGS=-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Werror"
+cmake --build build-parity --parallel
+ctest --test-dir build-parity --output-on-failure
+python tools/check_contracts.py
+.\scripts\pio.cmd test -e native
+.\scripts\pio.cmd run -e native_core_no_arduino -e esp32s3dev -e esp32s2dev
+.\scripts\pio.cmd run --project-dir examples/esp_idf/basic -e esp32s3 -e esp32s2
+.\scripts\pio.cmd pkg pack -o build-parity/TMP1x2-parity.tar.gz .
+python tools/check_package.py build-parity/TMP1x2-parity.tar.gz --generator Ninja
+```
+
+Local follow-up firmware logs and release archive are under ignored `build-parity/`;
+initial audit logs remain under `build-audit/`.
+No board was flashed. The [hardware procedure](hardware-validation.md) remains
+the next step for electrical, conversion-timing and ALERT behavior evidence.

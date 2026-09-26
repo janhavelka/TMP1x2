@@ -20,6 +20,48 @@ struct Sample {
   bool extendedMode = false;
   uint32_t timestampMs = 0;
 };
+using OperationToken = uint32_t; ///< Nonzero identity, never reused by an instance.
+enum class OperationKind : uint8_t { NONE, INITIALIZE, CONFIGURE, RECOVER, SHUTDOWN, READ };
+constexpr const char* toString(OperationKind value) {
+  switch (value) {
+    case OperationKind::NONE: return "NONE";
+    case OperationKind::INITIALIZE: return "INITIALIZE";
+    case OperationKind::CONFIGURE: return "CONFIGURE";
+    case OperationKind::RECOVER: return "RECOVER";
+    case OperationKind::SHUTDOWN: return "SHUTDOWN";
+    case OperationKind::READ: return "READ";
+  }
+  return "UNKNOWN";
+}
+struct OperationResult {
+  OperationToken token = 0;
+  OperationKind kind = OperationKind::NONE;
+  Status status = Status::Ok();
+  bool hasSample = false; ///< True only for a timely successful READ.
+  Sample sample{};
+  bool hardwareEffectPossible = false; ///< A mutating write was attempted.
+  uint32_t startedMs = 0;
+  uint32_t completedMs = 0;
+};
+struct OperationSnapshot {
+  bool active = false;
+  bool resultPending = false;
+  OperationToken token = 0;
+  OperationKind kind = OperationKind::NONE;
+  Status status = Status::Ok();
+  uint32_t startedMs = 0;
+  uint32_t timeoutMs = 0;
+  bool waiting = false;
+  uint32_t nextPollMs = 0;
+  bool hardwareEffectPossible = false;
+  Config desiredConfig{}; ///< Staged target; committed on the first write attempt.
+};
+struct PollResult {
+  Status status = Status::Ok();
+  uint8_t transfers = 0;
+  bool done = false;
+  uint32_t nextPollMs = 0;
+};
 struct ConfigurationInfo {
   uint16_t raw = 0;
   bool oneShotReady = false; ///< OS; meaningful for one-shot in shutdown only.
@@ -54,11 +96,15 @@ struct SettingsSnapshot {
 /// Typed setters cache validated desired settings before applying them. A failed
 /// write can have reached hardware: desired settings remain available, dirty is
 /// latched, and recover() reapplies them. Failed output arguments stay unchanged.
-/// Normal calls require successful begin(). OFFLINE is passive health telemetry:
+/// Observed EM differences retain a required format refresh even if a missing
+/// clock prevented writes; changing desired EM again does not clear that evidence.
+/// Normal calls require begin() or completed owner initialization/recovery.
+/// OFFLINE is passive health telemetry:
 /// calls still access the bus, and successful tracked I/O restores READY.
 /// Raw calls and probe() require bind() only and never change health. Raw writes
 /// conservatively dirty managed state. Raw CONFIG writes also require a fresh
-/// conversion during recovery, so that recovery requires nowMs. No general-call
+/// conversion during recovery, so synchronous recovery requires nowMs. Owner
+/// recovery can use caller-supplied poll times. No general-call
 /// reset is issued.
 class TMP1x2 {
 public:
@@ -70,8 +116,12 @@ public:
 
   /// Validate/cache transport without I2C; clears previous binding/runtime.
   /// Existing dirty evidence persists until successful full reapply or unbind().
+  /// An active operation or unconsumed result returns BUSY without changing state.
+  /// A pending manual one-shot also requires consumption or end() before rebind.
   Status bind(const Config& config);
-  void unbind(); ///< Forget all state without touching hardware.
+  /// Forget binding, pending results and dirty evidence without I2C. Operation
+  /// token identity is lifetime-scoped and is not reset by this explicit release.
+  void unbind();
   /// Apply and verify all configuration. An actual EM-format change requires
   /// nowMs; it settles the old conversion then obtains a fresh conversion in
   /// the new format before returning (two conservative 35-ms waits, each with
@@ -80,14 +130,42 @@ public:
   /// (35 ms plus 1-ms margin). Same-format continuous initialization needs no clock callback.
   Status begin(const Config& config);
   /// Local deinitialization only; retains binding/config and never touches I2C.
+  /// Cancels an owner operation and retains its terminal result until consumed.
   void end();
   Status shutdown(); ///< Tracked shutdown; desired mode becomes SHUTDOWN.
-  /// Poll an active one-shot. nowMs hook takes precedence over the argument.
+  /// Poll a manual one-shot; never advances an owner job or bypasses its result.
+  /// nowMs hook takes precedence over the argument.
   void tick(uint32_t nowMs);
   /// Read configuration fixed bits; this is presence/plausibility, NOT chip ID.
   Status probe();
   /// Reapply/verify all desired settings, including after failed begin or OFFLINE.
   Status recover();
+  /// Owner operations: admission, cancellation and result consumption are
+  /// bus-silent. A bound transport is required. timeoutMs is 1..INT32_MAX.
+  /// IN_PROGRESS means accepted; token remains unchanged on rejection.
+  /// Configure preserves the binding/hooks and stages sensor fields privately
+  /// until the first write attempt. Once committed, desired settings survive
+  /// cancellation/failure and dirty evidence requires a complete recovery.
+  Status startInitialize(uint32_t nowMs, uint32_t timeoutMs, OperationToken& token);
+  Status startConfigure(const Config& desired, uint32_t nowMs, uint32_t timeoutMs, OperationToken& token);
+  Status startRecover(uint32_t nowMs, uint32_t timeoutMs, OperationToken& token);
+  Status startShutdown(uint32_t nowMs, uint32_t timeoutMs, OperationToken& token);
+  /// Continuous reads the latest value; shutdown starts and completes one-shot.
+  /// An existing manual one-shot must be consumed before owner admission.
+  Status startRead(uint32_t nowMs, uint32_t timeoutMs, OperationToken& token);
+  /// At most maxTransfers physical callbacks; zero budget only checks deadline.
+  /// No sleep/yield/retry. nowMs hook is authoritative when present. Otherwise
+  /// deadlines use supplied times and settling starts at the first poll AFTER
+  /// the triggering write, because callback completion time is not observable.
+  /// Callback timeouts are capped to the remaining deadline; without a hook,
+  /// their sum within one poll is bounded by that remaining budget.
+  /// Terminal results remain until takeResult(); polling never consumes them.
+  PollResult poll(uint32_t nowMs, uint8_t maxTransfers = 1);
+  Status cancel();
+  Status takeResult(OperationToken token, OperationResult& out);
+  bool operationActive() const { return _jobActive; }
+  bool resultPending() const { return _jobResultPending; }
+  OperationSnapshot getOperationSnapshot() const;
   bool isBound() const { return _bound; }
   bool isInitialized() const { return _initialized; }
   DriverState state() const { return _state; }
@@ -117,6 +195,8 @@ public:
   Status setThresholds(float lowC, float highC);
   /// A valid live read is returned even if different from desired config; such
   /// a difference latches dirty state so managed measurement needs recovery.
+  /// Observing different EM also requires a fresh-format conversion, even if
+  /// hardware later returns to desired EM or a setter adopts the observed EM.
   Status readConfiguration(ConfigurationInfo& out);
   Status readThresholds(float& lowC, float& highC);
   Status verifyConfiguration();
@@ -125,7 +205,8 @@ public:
 
   /// Latest register value; may be stale/zero after reset or in shutdown.
   /// There is no continuous-mode data-ready flag or sample counter on this IC.
-  /// TEMP bit0 selects decoding; mismatch with desired EM returns NOT_READY.
+  /// TEMP bit0 selects decoding; mismatch with desired EM returns NOT_READY and
+  /// latches dirty/format-refresh evidence. Later managed reads require recovery.
   Status readSample(Sample& out);
   Status readTemperature(float& out);
   /// Requires desired SHUTDOWN mode and clean configuration. No allocation/wait.
@@ -168,10 +249,43 @@ private:
   Status write(uint8_t reg, uint16_t value, bool tracked);
   Status track(Status status);
   Status apply();
-  Status waitConversionInterval();
+  enum class ApplyPhase : uint8_t { IDLE, OBSERVE, FIRST_WRITE, WAIT_OLD, SET_FORMAT,
+    WRITE_LOW, WRITE_HIGH, TRIGGER, WAIT_NEW, CHECK_NEW, RESTORE, VERIFY_CONFIG, VERIFY_LOW,
+    VERIFY_HIGH, COMPLETE };
+  struct ApplyState {
+    ApplyPhase phase = ApplyPhase::IDLE;
+    Config desired{};
+    uint16_t previous = 0;
+    uint16_t config = 0;
+    uint16_t low = 0;
+    uint16_t high = 0;
+    bool refresh = false;
+    bool settle = false;
+    bool owner = false;
+    bool committed = false;
+    uint32_t waitStarted = 0;
+    bool waitNeedsAnchor = false;
+  };
+  void beginApply(const Config& desired, bool owner);
+  Status stepApply(bool& transferred);
+  bool applyWaiting() const;
+  void startApplyWait(ApplyPhase phase);
+  Status decodeObservedTemperature(uint16_t raw, Sample& sample);
+  enum class JobPhase : uint8_t { IDLE, APPLY, READ_CHECK, READ_TRIGGER, READ_WAIT,
+    READ_READY, READ_TEMP, COMPLETE };
+  Status admit(OperationKind kind, const Config& desired, uint32_t nowMs,
+               uint32_t timeoutMs, OperationToken& token);
+  Status finishJob(Status status);
+  bool jobLocked() const { return _jobActive || _jobResultPending; }
+  bool jobExpired() const;
+  uint32_t jobRemainingMs() const;
+  uint32_t nextJobPollMs() const;
+  bool jobWaiting() const;
+  Status stepJob(bool& transferred);
   Status verify(bool tracked);
   Status update(const Config& config);
   void markDirty(Status status);
+  void markConfigurationDirty(Status status, uint16_t observed);
   void clearConversion();
   uint32_t now() const;
   bool clockKnown() const { return _config.nowMs != nullptr || _clockSeen; }
@@ -196,5 +310,24 @@ private:
   uint32_t _lastOkMs = 0;
   uint32_t _lastErrorMs = 0;
   Status _lastError = Status::Ok();
+  ApplyState _apply{};
+  OperationToken _nextToken = 0; ///< Deliberately survives bind/unbind.
+  OperationToken _jobToken = 0;
+  OperationKind _jobKind = OperationKind::NONE;
+  JobPhase _jobPhase = JobPhase::IDLE;
+  bool _jobActive = false;
+  bool _jobResultPending = false;
+  bool _jobEffect = false;
+  bool _insidePoll = false;
+  bool _jobYieldPoll = false;
+  bool _jobWaitNeedsAnchor = false;
+  uint32_t _jobStartedMs = 0;
+  uint32_t _jobTimeoutMs = 0;
+  uint32_t _jobWaitStarted = 0;
+  uint32_t _callbackTimeoutMs = 0;
+  Config _jobDesired{};
+  Sample _jobSample{};
+  Status _jobStatus = Status::Ok();
+  OperationResult _jobResult{};
 };
 } // namespace TMP1x2

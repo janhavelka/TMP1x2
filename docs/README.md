@@ -1,9 +1,12 @@
 # Documentation
 
+- [2026-09-26 audit](audit-2026-09-26.md): sibling parity, confirmed defects and fixes.
 - [Library comparison](library-comparison.md): all local standalone I2C libraries
   surveyed and the chosen API/CLI conventions.
 - [Integration](integration.md): external bus ownership, callback contracts,
   health, configuration trust and timing.
+- [Cooperative owner operations](owner-operations.md): transfer budgets, time,
+  cancellation, retained results and scheduler integration.
 - [Reference archive](reference/README.md): TI specifications, official source
   survey, register map, quirks, source URLs and checksums.
 - [Validation results](validation.md): what was actually tested and build limits.

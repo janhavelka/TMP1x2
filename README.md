@@ -12,6 +12,10 @@ as the four-register protocol reference. See the full
 - Structured `Status`, typed enums, raw diagnostics, verified configuration,
   dirty-state detection and explicit recovery.
 - Application-owned I2C callbacks; no Arduino/ESP-IDF dependency in the core.
+- Cooperative initialization/configuration/recovery/shutdown/read operations with
+  transfer budgets, cancellation, deadlines and exactly-once results.
+- Explicit TMP112D X2SON address-select support at 0x40..0x43, with model-specific
+  address and physical ALERT capability checks.
 - Arduino ESP32-S2/S3 and native ESP-IDF examples sharing one diagnostic CLI.
 
 ## Integration
@@ -31,35 +35,42 @@ cfg.model = TMP1x2::Model::TMP112;  // explicit BOM selection; no chip ID exists
 cfg.i2cAddress = 0x48;
 cfg.mode = TMP1x2::Mode::SHUTDOWN;
 
-auto status = sensor.begin(cfg);
-if (status.ok()) {
-  sensor.tick(applicationNowMs());
-  status = sensor.startOneShot();
-}
-// In the application scheduler, without holding the bus lock between calls:
-sensor.tick(applicationNowMs());
-TMP1x2::Sample sample;
-status = sensor.tryRead(sample);
-if (status.ok()) {
-  consumeTemperature(sample.celsius);
-} else if (!status.is(TMP1x2::Err::MEASUREMENT_NOT_READY)) {
-  handleError(status);
+TMP1x2::OperationToken token = 0; // retain with the driver between scheduler turns
+auto status = sensor.bind(cfg);  // no I2C
+if (status.ok()) status = sensor.startInitialize(applicationNowMs(), 500, token);
+
+// In the owning scheduler, without holding a bus lock between calls:
+if (sensor.operationActive()) {
+  const auto progress = sensor.poll(applicationNowMs(), 1); // at most one transfer
+  if (progress.done) {
+    TMP1x2::OperationResult result;
+    if (sensor.takeResult(token, result).ok()) {
+      if (!result.status.ok()) handleError(result.status);
+      else if (result.kind == TMP1x2::OperationKind::INITIALIZE)
+        status = sensor.startRead(applicationNowMs(), 500, token);
+      else if (result.hasSample) consumeTemperature(result.sample.celsius);
+    }
+  }
 }
 ```
 
 Read the [ownership and integration contract](docs/integration.md) before writing
-callbacks. `end()` only deinitializes local state; `shutdown()` is the explicit
-fallible hardware operation. All bus calls require external serialization.
+callbacks and the [owner-operation contract](docs/owner-operations.md) before
+integrating a scheduler. `end()` deinitializes local state and retains a cancelled
+job's result; `shutdown()`/`startShutdown()` explicitly change hardware mode.
+All bus calls require external serialization. Synchronous `begin()`, typed
+setters, `recover()` and measurement helpers remain available.
 `readSample()` returns the current temperature register; it cannot establish
 freshness in continuous mode. One-shot completion is checked through hardware OS.
-Changing extended format and entering shutdown from continuous mode require the
-clock hook for TI's bounded settling sequence; ordinary continuous initialization
-can run without it.
+Changing extended format and entering shutdown from continuous mode use TI's
+settling sequence. Owner jobs can use caller time; synchronous helpers need the
+clock hook for those waits.
 
-Supported addresses are 0x48–0x4B for the classic ADD0 mapping. TMP112D X2SON
-address-select ordering codes at 0x40–0x43 are outside this release's supported
-configuration. Model selection cannot establish physical identity. Extended
-register range does not extend the part's specified operating range or accuracy.
+Supported addresses are 0x48–0x4B for classic TMP102/TMP112 and fixed-address
+TMP112 ALERT variants. Select `Model::TMP112D_ADDRESS_SELECT` for the X2SON ADD0
+variant at 0x40–0x43, which has no physical ALERT pin. Model selection cannot
+establish physical identity. Extended register range does not extend the part's
+specified operating range or accuracy.
 
 ## Build and test
 
@@ -92,6 +103,12 @@ idf.py -C examples/esp_idf/basic set-target esp32s3
 idf.py -C examples/esp_idf/basic build
 ```
 
+The same native IDF example also builds with the existing managed PlatformIO:
+
+```powershell
+.\scripts\pio.cmd run --project-dir examples/esp_idf/basic -e esp32s3 -e esp32s2
+```
+
 Use this repository as a component through `EXTRA_COMPONENT_DIRS` or under your
 application's `components/` directory. `library.json` is the version source;
 `python scripts/generate_version.py sync` regenerates version metadata.
@@ -104,3 +121,5 @@ own license; the independent driver and example code are MIT-licensed.
 
 See [validation results](docs/validation.md) for the checks actually run and
 [hardware validation](docs/hardware-validation.md) for the physical test procedure.
+The [2026-09-26 audit](docs/audit-2026-09-26.md) records sibling-library parity,
+confirmed defects, fixes and remaining design differences.

@@ -28,14 +28,16 @@ int16_t signedCounts(uint16_t raw, bool extended) {
 Status TMP1x2::validateConfig(const Config& c) {
   if (!c.i2cWrite || !c.i2cWriteRead)
     return Status::Error(Err::INVALID_CONFIG, "Both I2C callbacks are required");
-  if (c.i2cAddress < cmd::I2C_ADDR_MIN || c.i2cAddress > cmd::I2C_ADDR_MAX)
-    return Status::Error(Err::INVALID_CONFIG, "Address must be 0x48..0x4B");
+  if (!isValidAddress(c.model, c.i2cAddress))
+    return Status::Error(Err::INVALID_CONFIG, "Address is not supported by selected model");
   if (c.i2cTimeoutMs == 0 || c.i2cTimeoutMs > 0x7FFFFFFFu)
     return Status::Error(Err::INVALID_CONFIG, "I2C timeout must be 1..INT32_MAX ms");
-  if (static_cast<uint8_t>(c.model) > 1 || static_cast<uint8_t>(c.mode) > 1 ||
+  if (!isValidModel(c.model) || static_cast<uint8_t>(c.mode) > 1 ||
       static_cast<uint8_t>(c.conversionRate) > 3 || static_cast<uint8_t>(c.alertMode) > 1 ||
       static_cast<uint8_t>(c.alertPolarity) > 1 || static_cast<uint8_t>(c.faultQueue) > 3)
     return Status::Error(Err::INVALID_CONFIG, "Invalid configuration enum");
+  if (c.alertPin >= 0 && !hasAlertOutput(c.model))
+    return Status::Error(Err::INVALID_CONFIG, "Selected model has no ALERT output");
   if (c.alertPin < -1 || (c.alertPin >= 0 && !c.gpioRead))
     return Status::Error(Err::INVALID_CONFIG, "Configured ALERT pin requires GPIO callback");
   uint16_t low = 0, high = 0;
@@ -57,6 +59,8 @@ uint16_t TMP1x2::encodeConfiguration(const Config& c) {
 }
 
 Status TMP1x2::bind(const Config& config) {
+  if (jobLocked()) return Status::Error(Err::BUSY, "Consume or cancel the owner operation first");
+  if (_conversionStarted) return Status::Error(Err::BUSY, "Consume or end the manual one-shot first");
   const Config copy = config; // Support begin(getConfig()).
   const bool oldDirty = _dirty;
   const bool oldFormatRefreshPending = _formatRefreshPending;
@@ -79,6 +83,17 @@ Status TMP1x2::bind(const Config& config) {
 }
 
 void TMP1x2::unbind() {
+  _jobActive = _jobResultPending = _jobEffect = _insidePoll = false;
+  _jobToken = 0;
+  _jobKind = OperationKind::NONE;
+  _jobPhase = JobPhase::IDLE;
+  _jobStatus = Status::Ok();
+  _jobResult = OperationResult{};
+  _jobDesired = Config{};
+  _jobSample = Sample{};
+  _jobStartedMs = _jobTimeoutMs = _jobWaitStarted = _callbackTimeoutMs = 0;
+  _jobYieldPoll = _jobWaitNeedsAnchor = false;
+  _apply = ApplyState{};
   _config = Config{};
   _bound = false;
   _initialized = false;
@@ -103,6 +118,11 @@ Status TMP1x2::begin(const Config& config) {
 }
 
 void TMP1x2::end() {
+  if (_jobActive) (void)cancel();
+  if (_conversionStarted) {
+    _formatRefreshPending = true;
+    markDirty(Status::Error(Err::CANCELLED, "One-shot tracking ended before consumption"));
+  }
   _initialized = false;
   _state = DriverState::UNINIT;
   clearConversion();
@@ -124,6 +144,7 @@ void TMP1x2::tick(uint32_t nowMs) {
       _conversionClockKnown = true;
     }
   }
+  if (jobLocked()) return;
   if (_initialized && _conversionStarted && !_conversionReady && !_dirty) {
     bool ready = false;
     (void)isConversionReady(ready);
@@ -131,6 +152,7 @@ void TMP1x2::tick(uint32_t nowMs) {
 }
 
 Status TMP1x2::guard(bool clean) const {
+  if (jobLocked()) return Status::Error(Err::BUSY, "Owner operation or result is pending");
   if (!_initialized) return Status::Error(Err::NOT_INITIALIZED, "Call begin() first");
   if (clean && _dirty)
     return Status::Error(Err::INVALID_CONFIG, "Hardware configuration is dirty; call recover()");
@@ -160,7 +182,8 @@ Status TMP1x2::read(uint8_t reg, uint16_t& out, bool tracked) {
   if (reg > cmd::REG_THIGH) return Status::Error(Err::INVALID_PARAM, "Register must be 0..3");
   uint8_t bytes[2] = {0, 0};
   Status status = terminalTransportStatus(_config.i2cWriteRead(
-      _config.i2cAddress, &reg, 1, bytes, 2, _config.i2cTimeoutMs, _config.i2cUser));
+      _config.i2cAddress, &reg, 1, bytes, 2,
+      _insidePoll ? _callbackTimeoutMs : _config.i2cTimeoutMs, _config.i2cUser));
   if (tracked) status = track(status);
   if (status.ok()) out = static_cast<uint16_t>((static_cast<uint16_t>(bytes[0]) << 8) | bytes[1]);
   return status;
@@ -172,7 +195,8 @@ Status TMP1x2::write(uint8_t reg, uint16_t value, bool tracked) {
     return Status::Error(Err::INVALID_PARAM, "Only registers 1..3 are writable");
   const uint8_t bytes[3] = {reg, static_cast<uint8_t>(value >> 8), static_cast<uint8_t>(value)};
   Status status = terminalTransportStatus(_config.i2cWrite(
-      _config.i2cAddress, bytes, 3, _config.i2cTimeoutMs, _config.i2cUser));
+      _config.i2cAddress, bytes, 3,
+      _insidePoll ? _callbackTimeoutMs : _config.i2cTimeoutMs, _config.i2cUser));
   return tracked ? track(status) : status;
 }
 
@@ -182,12 +206,22 @@ void TMP1x2::markDirty(Status status) {
   clearConversion();
 }
 
+void TMP1x2::markConfigurationDirty(Status status, uint16_t observed) {
+  // A live EM mismatch is evidence about the payload, not just CONFIG. Keep
+  // that evidence if a later setter adopts the observed EM or hardware changes
+  // back before recovery; neither proves TEMP completed in the current format.
+  if (((observed & cmd::MASK_EXTENDED_MODE) != 0) != _config.extendedMode)
+    _formatRefreshPending = true;
+  markDirty(status);
+}
+
 void TMP1x2::clearConversion() {
   _conversionStarted = _conversionReady = _conversionClockKnown = false;
   _conversionStartMs = 0;
 }
 
 Status TMP1x2::probe() {
+  if (jobLocked()) return Status::Error(Err::BUSY, "Owner operation or result is pending");
   uint16_t raw = 0;
   Status status = read(cmd::REG_CONFIG, raw, false);
   if (!status.ok()) return status;
@@ -203,6 +237,7 @@ Status TMP1x2::verify(bool tracked) {
       (config & cmd::MASK_WRITABLE_CONFIG) !=
           (encodeConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG)) {
     status = Status::Error(Err::CONFIG_MISMATCH, "Configuration readback mismatch", config);
+    markConfigurationDirty(status, config);
     return status;
   }
   status = read(cmd::REG_TLOW, low, tracked);
@@ -219,97 +254,482 @@ Status TMP1x2::verify(bool tracked) {
   return Status::Ok();
 }
 
-Status TMP1x2::apply() {
-  uint16_t previous = 0;
-  Status status = read(cmd::REG_CONFIG, previous, true);
-  if (!status.ok()) { markDirty(status); return status; }
-  if (!decodeConfiguration(previous).valid) {
-    status = Status::Error(Err::CONFIG_MISMATCH, "Configuration fixed bits invalid", previous);
-    markDirty(status); return status;
-  }
-  const bool formatChanges = ((previous & cmd::MASK_EXTENDED_MODE) != 0) != _config.extendedMode;
-  const bool refreshFormat = formatChanges || _formatRefreshPending;
-  const bool enteringShutdown = !(previous & cmd::MASK_SHUTDOWN) && _config.mode == Mode::SHUTDOWN;
-  const bool needsSettling = refreshFormat || enteringShutdown;
-  if (needsSettling && !_config.nowMs) {
-    status = Status::Error(Err::INVALID_CONFIG, "Changing EM or entering shutdown requires nowMs callback");
-    markDirty(status); return status;
-  }
-  uint16_t low = 0, high = 0;
-  encodeThreshold(_config.lowThresholdC, _config.extendedMode, low);
-  encodeThreshold(_config.highThresholdC, _config.extendedMode, high);
-  const uint16_t config = encodeConfiguration(_config);
-  markDirty(Status::Ok());
-  // Preserve the actual format while an old conversion finishes. TI documents
-  // that changing EM mid-conversion can tag old-format payload with the new EM.
-  const uint16_t shutdown = static_cast<uint16_t>(
-      (previous & static_cast<uint16_t>(~cmd::MASK_OS)) | cmd::MASK_SHUTDOWN);
-  // Same-format continuous updates stay continuous. Threshold programming is
-  // not atomic; applications must disregard ALERT during configuration changes.
-  // If settling fails after SD reached hardware, a retry cannot infer whether
-  // its in-flight conversion finished merely by reading SD back as one.
-  if (needsSettling) _formatRefreshPending = true;
-  status = write(cmd::REG_CONFIG, needsSettling ? shutdown : config, true);
-  if (status.ok() && needsSettling) status = waitConversionInterval();
-  if (status.ok() && refreshFormat) {
-    // Preserve uncertainty across partial failures: readback of EM alone does
-    // not prove the payload has completed a conversion in that format.
-    _formatRefreshPending = true;
-    status = write(cmd::REG_CONFIG, config | cmd::MASK_SHUTDOWN, true);
-  }
-  if (status.ok()) status = write(cmd::REG_TLOW, low, true);
-  if (status.ok()) status = write(cmd::REG_THIGH, high, true);
-  // Replace the stale payload as well as its format marker before exposing it.
-  if (status.ok() && refreshFormat)
-    status = write(cmd::REG_CONFIG, config | cmd::MASK_SHUTDOWN | cmd::MASK_OS, true);
-  if (status.ok() && refreshFormat) status = waitConversionInterval();
-  if (status.ok() && refreshFormat) {
-    uint16_t completed = 0;
-    status = read(cmd::REG_CONFIG, completed, true);
-    if (status.ok() && !(completed & cmd::MASK_OS))
-      status = Status::Error(Err::TIMEOUT, "New-format conversion did not finish");
-  }
-  if (status.ok()) status = write(cmd::REG_CONFIG, config, true);
-  if (status.ok()) status = verify(true);
-  if (!status.ok()) { markDirty(status); return status; }
-  _dirty = false;
-  _formatRefreshPending = false;
-  _dirtyError = Status::Ok();
-  _hasSample = false;
-  return Status::Ok();
+void TMP1x2::beginApply(const Config& desired, bool owner) {
+  _apply = ApplyState{};
+  _apply.phase = ApplyPhase::OBSERVE;
+  _apply.desired = desired;
+  _apply.owner = owner;
+  _apply.config = encodeConfiguration(desired);
+  (void)encodeThreshold(desired.lowThresholdC, desired.extendedMode, _apply.low);
+  (void)encodeThreshold(desired.highThresholdC, desired.extendedMode, _apply.high);
 }
 
-Status TMP1x2::waitConversionInterval() {
-  const uint32_t started = now();
-  uint32_t previous = started;
-  uint32_t unchanged = 0;
-  // One extra millisecond covers truncation of the caller's millisecond clock.
-  while (static_cast<uint32_t>(now() - started) < cmd::CONVERSION_TIME_MAX_MS + 1u) {
-    const uint32_t current = now();
-    if (current == previous) {
-      if (++unchanged >= 1000000u)
-        return Status::Error(Err::INVALID_CONFIG, "nowMs clock did not advance");
-    } else { previous = current; unchanged = 0; }
-    if (_config.cooperativeYield) _config.cooperativeYield(_config.timeUser);
+bool TMP1x2::applyWaiting() const {
+  return _apply.phase == ApplyPhase::WAIT_OLD || _apply.phase == ApplyPhase::WAIT_NEW;
+}
+
+void TMP1x2::startApplyWait(ApplyPhase phase) {
+  _apply.phase = phase;
+  _apply.waitStarted = now();
+  _apply.waitNeedsAnchor = _apply.owner && !_config.nowMs;
+  // External-time callers cannot observe this callback's completion inside the
+  // current poll. Anchor their settling interval on the next owner poll.
+  _jobYieldPoll = _apply.owner;
+}
+
+Status TMP1x2::stepApply(bool& transferred) {
+  transferred = false;
+  const Status pending = Status::Error(Err::IN_PROGRESS, "Configuration in progress");
+  Status status;
+  uint16_t raw = 0;
+  switch (_apply.phase) {
+    case ApplyPhase::OBSERVE:
+      transferred = true;
+      status = read(cmd::REG_CONFIG, raw, true);
+      if (!status.ok()) return status;
+      _apply.previous = raw;
+      if (!decodeConfiguration(raw).valid) {
+        status = Status::Error(Err::CONFIG_MISMATCH, "Configuration fixed bits invalid", raw);
+        markConfigurationDirty(status, raw);
+        return status;
+      }
+      // Compare against the existing desired profile before a staged target is
+      // adopted; cancellation before a write must not manufacture an EM change.
+      if (((raw & cmd::MASK_EXTENDED_MODE) != 0) != _config.extendedMode)
+        _formatRefreshPending = true;
+      if (_apply.owner && _initialized && (raw & cmd::MASK_WRITABLE_CONFIG) !=
+          (encodeConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG))
+        markConfigurationDirty(Status::Error(Err::CONFIG_MISMATCH,
+            "Observed configuration differs from desired settings", raw), raw);
+      _apply.refresh = _formatRefreshPending ||
+          (((raw & cmd::MASK_EXTENDED_MODE) != 0) != _apply.desired.extendedMode);
+      _apply.settle = _apply.refresh ||
+          (!(raw & cmd::MASK_SHUTDOWN) && _apply.desired.mode == Mode::SHUTDOWN);
+      if (_apply.settle && !_apply.owner && !_config.nowMs)
+        return Status::Error(Err::INVALID_CONFIG, "Changing EM or entering shutdown requires nowMs callback");
+      _apply.phase = ApplyPhase::FIRST_WRITE;
+      return pending;
+    case ApplyPhase::FIRST_WRITE:
+      // Commit the validated target before an ambiguous write can reach silicon.
+      _config = _apply.desired;
+      _apply.committed = true;
+      if (_apply.owner) _jobEffect = true;
+      markDirty(Status::Ok());
+      if (_apply.settle) _formatRefreshPending = true;
+      transferred = true;
+      raw = _apply.settle ? static_cast<uint16_t>(
+          (_apply.previous & static_cast<uint16_t>(~cmd::MASK_OS)) | cmd::MASK_SHUTDOWN) : _apply.config;
+      status = write(cmd::REG_CONFIG, raw, true);
+      if (!status.ok()) return status;
+      if (_apply.settle) startApplyWait(ApplyPhase::WAIT_OLD);
+      else _apply.phase = ApplyPhase::WRITE_LOW;
+      return pending;
+    case ApplyPhase::WAIT_OLD:
+    case ApplyPhase::WAIT_NEW:
+      if (_apply.waitNeedsAnchor) {
+        _apply.waitStarted = now();
+        _apply.waitNeedsAnchor = false;
+        return pending;
+      }
+      if (static_cast<uint32_t>(now() - _apply.waitStarted) < cmd::CONVERSION_TIME_MAX_MS + 1U)
+        return pending;
+      _apply.phase = _apply.phase == ApplyPhase::WAIT_NEW ? ApplyPhase::CHECK_NEW :
+          (_apply.refresh ? ApplyPhase::SET_FORMAT : ApplyPhase::WRITE_LOW);
+      return pending;
+    case ApplyPhase::SET_FORMAT:
+      transferred = true;
+      status = write(cmd::REG_CONFIG, _apply.config | cmd::MASK_SHUTDOWN, true);
+      if (!status.ok()) return status;
+      _apply.phase = ApplyPhase::WRITE_LOW;
+      return pending;
+    case ApplyPhase::WRITE_LOW:
+      transferred = true;
+      status = write(cmd::REG_TLOW, _apply.low, true);
+      if (!status.ok()) return status;
+      _apply.phase = ApplyPhase::WRITE_HIGH;
+      return pending;
+    case ApplyPhase::WRITE_HIGH:
+      transferred = true;
+      status = write(cmd::REG_THIGH, _apply.high, true);
+      if (!status.ok()) return status;
+      _apply.phase = _apply.refresh ? ApplyPhase::TRIGGER : ApplyPhase::RESTORE;
+      return pending;
+    case ApplyPhase::TRIGGER:
+      transferred = true;
+      status = write(cmd::REG_CONFIG, _apply.config | cmd::MASK_SHUTDOWN | cmd::MASK_OS, true);
+      if (!status.ok()) return status;
+      startApplyWait(ApplyPhase::WAIT_NEW);
+      return pending;
+    case ApplyPhase::CHECK_NEW:
+      transferred = true;
+      status = read(cmd::REG_CONFIG, raw, true);
+      if (!status.ok()) return status;
+      if (!decodeConfiguration(raw).valid || (raw & cmd::MASK_WRITABLE_CONFIG) !=
+          ((_apply.config | cmd::MASK_SHUTDOWN) & cmd::MASK_WRITABLE_CONFIG)) {
+        status = Status::Error(Err::CONFIG_MISMATCH, "New-format configuration changed", raw);
+        markConfigurationDirty(status, raw);
+        return status;
+      }
+      if (!(raw & cmd::MASK_OS))
+        return Status::Error(Err::TIMEOUT, "New-format conversion did not finish");
+      _apply.phase = ApplyPhase::RESTORE;
+      return pending;
+    case ApplyPhase::RESTORE:
+      transferred = true;
+      status = write(cmd::REG_CONFIG, _apply.config, true);
+      if (!status.ok()) return status;
+      _apply.phase = ApplyPhase::VERIFY_CONFIG;
+      return pending;
+    case ApplyPhase::VERIFY_CONFIG:
+      transferred = true;
+      status = read(cmd::REG_CONFIG, raw, true);
+      if (!status.ok()) return status;
+      if (!decodeConfiguration(raw).valid || (raw & cmd::MASK_WRITABLE_CONFIG) !=
+          (_apply.config & cmd::MASK_WRITABLE_CONFIG)) {
+        status = Status::Error(Err::CONFIG_MISMATCH, "Configuration readback mismatch", raw);
+        markConfigurationDirty(status, raw);
+        return status;
+      }
+      _apply.phase = ApplyPhase::VERIFY_LOW;
+      return pending;
+    case ApplyPhase::VERIFY_LOW:
+    case ApplyPhase::VERIFY_HIGH:
+      transferred = true;
+      status = read(_apply.phase == ApplyPhase::VERIFY_LOW ? cmd::REG_TLOW : cmd::REG_THIGH, raw, true);
+      if (!status.ok()) return status;
+      if (raw != (_apply.phase == ApplyPhase::VERIFY_LOW ? _apply.low : _apply.high))
+        return Status::Error(Err::CONFIG_MISMATCH, "Threshold readback mismatch", raw);
+      _apply.phase = _apply.phase == ApplyPhase::VERIFY_LOW ? ApplyPhase::VERIFY_HIGH : ApplyPhase::COMPLETE;
+      return pending;
+    case ApplyPhase::COMPLETE:
+      _dirty = false;
+      _formatRefreshPending = false;
+      _dirtyError = Status::Ok();
+      _hasSample = false;
+      _apply.phase = ApplyPhase::IDLE;
+      return Status::Ok();
+    case ApplyPhase::IDLE:
+      return Status::Error(Err::INVALID_CONFIG, "No configuration operation is active");
   }
-  return Status::Ok();
+  return Status::Error(Err::INVALID_CONFIG, "Invalid configuration operation phase");
+}
+
+Status TMP1x2::apply() {
+  beginApply(_config, false);
+  uint32_t previous = now();
+  uint32_t unchanged = 0;
+  for (;;) {
+    bool transferred = false;
+    Status status = stepApply(transferred);
+    if (!status.inProgress()) {
+      if (!status.ok()) markDirty(status);
+      return status;
+    }
+    if (applyWaiting()) {
+      const uint32_t current = now();
+      if (current == previous) {
+        if (++unchanged >= 1000000U) {
+          status = Status::Error(Err::INVALID_CONFIG, "nowMs clock did not advance");
+          markDirty(status);
+          return status;
+        }
+      } else { previous = current; unchanged = 0; }
+      if (_config.cooperativeYield) _config.cooperativeYield(_config.timeUser);
+    }
+  }
 }
 
 Status TMP1x2::recover() {
+  if (jobLocked()) return Status::Error(Err::BUSY, "Owner operation or result is pending");
+  if (_conversionStarted) return Status::Error(Err::BUSY, "Consume or end the manual one-shot first");
   if (!_bound) return Status::Error(Err::NOT_BOUND, "No transport is bound");
   uint16_t raw = 0;
   Status status = read(cmd::REG_CONFIG, raw, true);
   if (!status.ok()) return status;
   if (!decodeConfiguration(raw).valid) {
     status = Status::Error(Err::CONFIG_MISMATCH, "Configuration fixed bits invalid", raw);
-    markDirty(status);
+    markConfigurationDirty(status, raw);
     return status;
   }
+  // Preserve the observation before apply() performs another transaction.
+  // A failure there must not erase evidence of a possibly stale TEMP payload.
+  if (((raw & cmd::MASK_EXTENDED_MODE) != 0) != _config.extendedMode)
+    _formatRefreshPending = true;
   status = apply();
   if (!status.ok()) return status;
   _initialized = true;
   _state = DriverState::READY;
   return Status::Ok();
+}
+
+Status TMP1x2::admit(OperationKind kind, const Config& desired, uint32_t nowMs,
+                      uint32_t timeoutMs, OperationToken& token) {
+  if (jobLocked()) return Status::Error(Err::BUSY, "Owner operation or result is pending");
+  if (!_bound) return Status::Error(Err::NOT_BOUND, "No transport is bound");
+  if (timeoutMs == 0 || timeoutMs > 0x7FFFFFFFU)
+    return Status::Error(Err::INVALID_PARAM, "Operation timeout must be 1..INT32_MAX ms");
+  if (_nextToken == UINT32_MAX)
+    return Status::Error(Err::INVALID_CONFIG, "Operation token space exhausted");
+  if (_conversionStarted) return Status::Error(Err::BUSY, "Consume the manual one-shot first");
+  if (kind == OperationKind::CONFIGURE || kind == OperationKind::SHUTDOWN || kind == OperationKind::READ) {
+    Status status = guard(kind == OperationKind::READ);
+    if (!status.ok()) return status;
+  }
+  Status status = validateConfig(desired);
+  if (!status.ok()) return Status::Error(Err::INVALID_PARAM, status.msg, status.detail);
+  // Profiles never replace a live transport or its time/GPIO ownership.
+  if (desired.i2cWrite != _config.i2cWrite || desired.i2cWriteRead != _config.i2cWriteRead ||
+      desired.i2cUser != _config.i2cUser || desired.i2cAddress != _config.i2cAddress ||
+      desired.i2cTimeoutMs != _config.i2cTimeoutMs || desired.model != _config.model ||
+      desired.nowMs != _config.nowMs || desired.cooperativeYield != _config.cooperativeYield ||
+      desired.timeUser != _config.timeUser || desired.alertPin != _config.alertPin ||
+      desired.gpioRead != _config.gpioRead || desired.gpioUser != _config.gpioUser ||
+      (desired.offlineThreshold == 0 ? 1 : desired.offlineThreshold) != _config.offlineThreshold)
+    return Status::Error(Err::INVALID_PARAM, "Configure cannot change binding or hooks; use bind()");
+  _jobDesired = desired;
+  if (_jobDesired.offlineThreshold == 0) _jobDesired.offlineThreshold = 1;
+  uint16_t encoded = 0;
+  (void)encodeThreshold(desired.lowThresholdC, desired.extendedMode, encoded);
+  _jobDesired.lowThresholdC = decodeThreshold(encoded, desired.extendedMode);
+  (void)encodeThreshold(desired.highThresholdC, desired.extendedMode, encoded);
+  _jobDesired.highThresholdC = decodeThreshold(encoded, desired.extendedMode);
+  if (!_config.nowMs) { _tickMs = nowMs; _clockSeen = true; }
+  _jobStartedMs = now();
+  _jobTimeoutMs = timeoutMs;
+  _jobToken = ++_nextToken;
+  _jobKind = kind;
+  _jobActive = true;
+  _jobEffect = false;
+  _jobSample = Sample{};
+  _jobWaitNeedsAnchor = false;
+  _jobStatus = Status::Error(Err::IN_PROGRESS, "Owner operation in progress");
+  if (kind == OperationKind::READ) {
+    _jobPhase = _config.mode == Mode::CONTINUOUS ? JobPhase::READ_TEMP : JobPhase::READ_CHECK;
+  } else {
+    _jobPhase = JobPhase::APPLY;
+    beginApply(_jobDesired, true);
+  }
+  token = _jobToken;
+  return _jobStatus;
+}
+
+Status TMP1x2::startInitialize(uint32_t nowMs, uint32_t timeoutMs, OperationToken& token) {
+  return admit(OperationKind::INITIALIZE, _config, nowMs, timeoutMs, token);
+}
+Status TMP1x2::startConfigure(const Config& desired, uint32_t nowMs, uint32_t timeoutMs, OperationToken& token) {
+  return admit(OperationKind::CONFIGURE, desired, nowMs, timeoutMs, token);
+}
+Status TMP1x2::startRecover(uint32_t nowMs, uint32_t timeoutMs, OperationToken& token) {
+  return admit(OperationKind::RECOVER, _config, nowMs, timeoutMs, token);
+}
+Status TMP1x2::startShutdown(uint32_t nowMs, uint32_t timeoutMs, OperationToken& token) {
+  Config desired = _config;
+  desired.mode = Mode::SHUTDOWN;
+  return admit(OperationKind::SHUTDOWN, desired, nowMs, timeoutMs, token);
+}
+Status TMP1x2::startRead(uint32_t nowMs, uint32_t timeoutMs, OperationToken& token) {
+  return admit(OperationKind::READ, _config, nowMs, timeoutMs, token);
+}
+
+bool TMP1x2::jobExpired() const {
+  return static_cast<uint32_t>(now() - _jobStartedMs) >= _jobTimeoutMs;
+}
+uint32_t TMP1x2::jobRemainingMs() const {
+  const uint32_t elapsed = static_cast<uint32_t>(now() - _jobStartedMs);
+  return elapsed >= _jobTimeoutMs ? 0 : _jobTimeoutMs - elapsed;
+}
+bool TMP1x2::jobWaiting() const {
+  return _jobActive && ((_jobPhase == JobPhase::APPLY && applyWaiting()) || _jobPhase == JobPhase::READ_WAIT);
+}
+uint32_t TMP1x2::nextJobPollMs() const {
+  if (!jobWaiting()) return now();
+  const uint32_t current = now();
+  const bool applying = _jobPhase == JobPhase::APPLY;
+  if (applying ? _apply.waitNeedsAnchor : _jobWaitNeedsAnchor) return current;
+  const uint32_t elapsed = static_cast<uint32_t>(current -
+      (applying ? _apply.waitStarted : _jobWaitStarted));
+  const uint32_t waitRemaining = elapsed >= cmd::CONVERSION_TIME_MAX_MS + 1U ? 0 :
+      cmd::CONVERSION_TIME_MAX_MS + 1U - elapsed;
+  const uint32_t operationRemaining = jobRemainingMs();
+  return current + (waitRemaining < operationRemaining ? waitRemaining : operationRemaining);
+}
+
+Status TMP1x2::finishJob(Status status) {
+  if (!status.ok()) {
+    if (_jobEffect) {
+      if (_jobKind == OperationKind::READ) _formatRefreshPending = true;
+      markDirty(status);
+    }
+  } else if (_jobKind == OperationKind::READ) {
+    _lastSample = _jobSample;
+    _hasSample = true;
+    clearConversion();
+  } else {
+    _initialized = true;
+    _state = DriverState::READY;
+  }
+  _jobStatus = status;
+  _jobResult = OperationResult{};
+  _jobResult.token = _jobToken;
+  _jobResult.kind = _jobKind;
+  _jobResult.status = status;
+  _jobResult.hasSample = status.ok() && _jobKind == OperationKind::READ;
+  if (_jobResult.hasSample) _jobResult.sample = _jobSample;
+  _jobResult.hardwareEffectPossible = _jobEffect;
+  _jobResult.startedMs = _jobStartedMs;
+  _jobResult.completedMs = now();
+  _jobActive = false;
+  _jobResultPending = true;
+  _jobPhase = JobPhase::IDLE;
+  return status;
+}
+
+Status TMP1x2::stepJob(bool& transferred) {
+  transferred = false;
+  const Status pending = Status::Error(Err::IN_PROGRESS, "Owner operation in progress");
+  Status status;
+  uint16_t raw = 0;
+  switch (_jobPhase) {
+    case JobPhase::APPLY:
+      return stepApply(transferred);
+    case JobPhase::READ_CHECK:
+    case JobPhase::READ_READY:
+      transferred = true;
+      status = read(cmd::REG_CONFIG, raw, true);
+      if (!status.ok()) return status;
+      if (!decodeConfiguration(raw).valid || (raw & cmd::MASK_WRITABLE_CONFIG) !=
+          (encodeConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG)) {
+        status = Status::Error(Err::CONFIG_MISMATCH, "One-shot configuration changed", raw);
+        markConfigurationDirty(status, raw);
+        return status;
+      }
+      if (!(raw & cmd::MASK_OS)) {
+        if (_jobPhase == JobPhase::READ_CHECK)
+          return Status::Error(Err::BUSY, "Previous shutdown conversion is still active");
+        _jobYieldPoll = true;
+        return pending;
+      }
+      _jobPhase = _jobPhase == JobPhase::READ_CHECK ? JobPhase::READ_TRIGGER : JobPhase::READ_TEMP;
+      return pending;
+    case JobPhase::READ_TRIGGER:
+      transferred = true;
+      _jobEffect = true;
+      status = write(cmd::REG_CONFIG, encodeConfiguration(_config) | cmd::MASK_OS, true);
+      if (!status.ok()) return status;
+      _conversionStarted = true;
+      _conversionReady = false;
+      _conversionClockKnown = true;
+      _conversionStartMs = now();
+      _jobWaitStarted = now();
+      _jobWaitNeedsAnchor = !_config.nowMs;
+      _jobPhase = JobPhase::READ_WAIT;
+      _jobYieldPoll = true;
+      return pending;
+    case JobPhase::READ_WAIT:
+      if (_jobWaitNeedsAnchor) {
+        _jobWaitStarted = now();
+        _conversionStartMs = _jobWaitStarted;
+        _jobWaitNeedsAnchor = false;
+        return pending;
+      }
+      if (static_cast<uint32_t>(now() - _jobWaitStarted) < cmd::CONVERSION_TIME_MAX_MS + 1U)
+        return pending;
+      _jobPhase = JobPhase::READ_READY;
+      return pending;
+    case JobPhase::READ_TEMP:
+      transferred = true;
+      status = read(cmd::REG_TEMPERATURE, raw, true);
+      if (!status.ok()) return status;
+      status = decodeObservedTemperature(raw, _jobSample);
+      if (!status.ok()) return status;
+      _jobSample.timestampMs = now();
+      _jobPhase = JobPhase::COMPLETE;
+      return pending;
+    case JobPhase::COMPLETE:
+      return Status::Ok();
+    case JobPhase::IDLE:
+      return Status::Error(Err::RESULT_NOT_AVAILABLE, "No owner operation is active");
+  }
+  return Status::Error(Err::INVALID_CONFIG, "Invalid owner operation phase");
+}
+
+PollResult TMP1x2::poll(uint32_t nowMs, uint8_t maxTransfers) {
+  PollResult result;
+  if (!_config.nowMs) { _tickMs = nowMs; _clockSeen = true; }
+  if (!_jobActive) {
+    result.done = _jobResultPending;
+    result.status = _jobResultPending ? _jobResult.status :
+        Status::Error(Err::RESULT_NOT_AVAILABLE, "No owner operation or result is available");
+    result.nextPollMs = now();
+    return result;
+  }
+  _jobYieldPoll = false;
+  uint32_t callbackBudget = jobRemainingMs();
+  for (;;) {
+    if (jobExpired()) {
+      (void)finishJob(Status::Error(Err::OPERATION_TIMEOUT, "Owner operation deadline expired"));
+      break;
+    }
+    if (maxTransfers == 0) break;
+    const bool noTransferPhase = _jobPhase == JobPhase::COMPLETE || _jobPhase == JobPhase::READ_WAIT ||
+        (_jobPhase == JobPhase::APPLY && (applyWaiting() || _apply.phase == ApplyPhase::COMPLETE));
+    if (!noTransferPhase && (result.transfers >= maxTransfers || callbackBudget == 0)) break;
+    const uint32_t remaining = jobRemainingMs();
+    if (remaining == 0) {
+      (void)finishJob(Status::Error(Err::OPERATION_TIMEOUT, "Owner operation deadline expired"));
+      break;
+    }
+    _callbackTimeoutMs = _config.i2cTimeoutMs < remaining ? _config.i2cTimeoutMs : remaining;
+    if (!_config.nowMs && _callbackTimeoutMs > callbackBudget) _callbackTimeoutMs = callbackBudget;
+    _insidePoll = true;
+    bool transferred = false;
+    const Status status = stepJob(transferred);
+    _insidePoll = false;
+    if (transferred) {
+      ++result.transfers;
+      if (!_config.nowMs) callbackBudget -= _callbackTimeoutMs;
+    }
+    // Never publish a completed sample/configuration after a callback overran
+    // the owner's deadline. Transport health still records its actual outcome.
+    if (jobExpired()) {
+      (void)finishJob(Status::Error(Err::OPERATION_TIMEOUT, "Owner operation deadline expired"));
+      break;
+    }
+    if (!status.inProgress()) { (void)finishJob(status); break; }
+    if (_jobYieldPoll || (!transferred && jobWaiting())) break;
+  }
+  result.done = !_jobActive;
+  result.status = _jobStatus;
+  result.nextPollMs = nextJobPollMs();
+  return result;
+}
+
+Status TMP1x2::cancel() {
+  if (!_jobActive) return Status::Error(_jobResultPending ? Err::BUSY : Err::RESULT_NOT_AVAILABLE,
+      "No active owner operation to cancel");
+  return finishJob(Status::Error(Err::CANCELLED, "Owner operation cancelled"));
+}
+Status TMP1x2::takeResult(OperationToken token, OperationResult& out) {
+  if (!_jobResultPending) return Status::Error(Err::RESULT_NOT_AVAILABLE, "No terminal result is available");
+  if (token != _jobResult.token) return Status::Error(Err::TOKEN_MISMATCH, "Operation token does not match result");
+  out = _jobResult;
+  _jobResultPending = false;
+  return Status::Ok();
+}
+OperationSnapshot TMP1x2::getOperationSnapshot() const {
+  OperationSnapshot snapshot;
+  snapshot.active = _jobActive;
+  snapshot.resultPending = _jobResultPending;
+  snapshot.token = _jobToken;
+  snapshot.kind = _jobKind;
+  snapshot.status = _jobStatus;
+  snapshot.startedMs = _jobStartedMs;
+  snapshot.timeoutMs = _jobTimeoutMs;
+  snapshot.waiting = jobWaiting();
+  snapshot.nextPollMs = nextJobPollMs();
+  snapshot.hardwareEffectPossible = _jobEffect;
+  snapshot.desiredConfig = _jobDesired;
+  return snapshot;
 }
 
 Status TMP1x2::update(const Config& config) {
@@ -356,12 +776,12 @@ Status TMP1x2::readConfiguration(ConfigurationInfo& out) {
   const ConfigurationInfo info = decodeConfiguration(raw);
   if (!info.valid) {
     status = Status::Error(Err::CONFIG_MISMATCH, "Configuration fixed bits invalid", raw);
-    markDirty(status);
+    markConfigurationDirty(status, raw);
     return status;
   }
   if ((raw & cmd::MASK_WRITABLE_CONFIG) !=
       (encodeConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG))
-    markDirty(Status::Error(Err::CONFIG_MISMATCH, "Observed configuration differs from desired settings", raw));
+    markConfigurationDirty(Status::Error(Err::CONFIG_MISMATCH, "Observed configuration differs from desired settings", raw), raw);
   out = info;
   return Status::Ok();
 }
@@ -371,16 +791,17 @@ Status TMP1x2::readThresholds(float& lowC, float& highC) {
   if (!status.ok()) return status;
   uint16_t config = 0, low = 0, high = 0;
   status = read(cmd::REG_CONFIG, config, true);
-  if (status.ok()) status = read(cmd::REG_TLOW, low, true);
-  if (status.ok()) status = read(cmd::REG_THIGH, high, true);
   if (!status.ok()) return status;
   if (!decodeConfiguration(config).valid) {
     status = Status::Error(Err::CONFIG_MISMATCH, "Configuration fixed bits invalid", config);
-    markDirty(status); return status;
+    markConfigurationDirty(status, config); return status;
   }
   if ((config & cmd::MASK_WRITABLE_CONFIG) !=
       (encodeConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG))
-    markDirty(Status::Error(Err::CONFIG_MISMATCH, "Observed configuration differs from desired settings", config));
+    markConfigurationDirty(Status::Error(Err::CONFIG_MISMATCH, "Observed configuration differs from desired settings", config), config);
+  status = read(cmd::REG_TLOW, low, true);
+  if (status.ok()) status = read(cmd::REG_THIGH, high, true);
+  if (!status.ok()) return status;
   const bool extended = (config & cmd::MASK_EXTENDED_MODE) != 0;
   uint16_t expectedLow = 0, expectedHigh = 0;
   encodeThreshold(_config.lowThresholdC, _config.extendedMode, expectedLow);
@@ -404,6 +825,8 @@ Status TMP1x2::verifyConfiguration() {
 Status TMP1x2::readAlertPin(bool& active) const {
   Status status = guard(true);
   if (!status.ok()) return status;
+  if (!hasAlertOutput(_config.model))
+    return Status::Error(Err::INVALID_CONFIG, "Selected model has no ALERT output");
   if (!_config.gpioRead || _config.alertPin < 0)
     return Status::Error(Err::INVALID_CONFIG, "No ALERT GPIO hook configured");
   active = _config.gpioRead(_config.alertPin, _config.gpioUser) ==
@@ -418,13 +841,24 @@ Status TMP1x2::readSample(Sample& out) {
   status = read(cmd::REG_TEMPERATURE, raw, true);
   if (!status.ok()) return status;
   Sample sample;
-  status = decodeTemperature(raw, sample);
-  if (!status.ok()) { markDirty(status); return status; }
-  if (sample.extendedMode != _config.extendedMode) return notReady();
+  status = decodeObservedTemperature(raw, sample);
+  if (!status.ok()) return status;
   sample.timestampMs = now();
   _lastSample = sample;
   _hasSample = true;
   out = sample;
+  return Status::Ok();
+}
+
+Status TMP1x2::decodeObservedTemperature(uint16_t raw, Sample& sample) {
+  const bool formatMismatch = ((raw & cmd::MASK_TEMP_EXTENDED) != 0) != _config.extendedMode;
+  if (formatMismatch) _formatRefreshPending = true;
+  Status status = decodeTemperature(raw, sample);
+  if (!status.ok()) { markDirty(status); return status; }
+  if (formatMismatch) {
+    markDirty(Status::Error(Err::CONFIG_MISMATCH, "Temperature format differs from desired settings", raw));
+    return notReady();
+  }
   return Status::Ok();
 }
 
@@ -448,7 +882,7 @@ Status TMP1x2::startOneShot() {
       (current & cmd::MASK_WRITABLE_CONFIG) !=
           (encodeConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG)) {
     status = Status::Error(Err::CONFIG_MISMATCH, "One-shot configuration changed", current);
-    markDirty(status); return status;
+    markConfigurationDirty(status, current); return status;
   }
   if (!(current & cmd::MASK_OS))
     return Status::Error(Err::BUSY, "Previous shutdown conversion is still active");
@@ -475,7 +909,7 @@ Status TMP1x2::isConversionReady(bool& ready) {
       (raw & cmd::MASK_WRITABLE_CONFIG) !=
           (encodeConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG)) {
     status = Status::Error(Err::CONFIG_MISMATCH, "One-shot configuration changed", raw);
-    markDirty(status); return status;
+    markConfigurationDirty(status, raw); return status;
   }
   _conversionReady = (raw & cmd::MASK_OS) != 0;
   ready = _conversionReady;
@@ -541,8 +975,12 @@ Status TMP1x2::writeRegister(uint8_t reg, uint16_t value) {
   return status;
 }
 
-Status TMP1x2::readRegisterRaw(uint8_t reg, uint16_t& out) { return read(reg, out, false); }
+Status TMP1x2::readRegisterRaw(uint8_t reg, uint16_t& out) {
+  if (jobLocked()) return Status::Error(Err::BUSY, "Owner operation or result is pending");
+  return read(reg, out, false);
+}
 Status TMP1x2::writeRegisterRaw(uint8_t reg, uint16_t value) {
+  if (jobLocked()) return Status::Error(Err::BUSY, "Owner operation or result is pending");
   if (!_bound) return Status::Error(Err::NOT_BOUND, "No transport is bound");
   if (reg < cmd::REG_CONFIG || reg > cmd::REG_THIGH)
     return Status::Error(Err::INVALID_PARAM, "Only registers 1..3 are writable");
