@@ -3,6 +3,11 @@
 - [2026-09-26 audit](audit-2026-09-26.md): sibling parity, confirmed defects and fixes.
 - [Library comparison](library-comparison.md): all local standalone I2C libraries
   surveyed and the chosen API/CLI conventions.
+- [Feature coverage](feature-coverage.md): chip features, initialization/name parity,
+  field helpers and explicit application-owned bus behavior.
+- [Field helpers](field-helpers.md): configuration validation, cached samples,
+  health snapshots, register readback and temperature units.
+- [Shared-bus operations](bus-operations.md): explicit reset and SMBus Alert Response.
 - [Integration](integration.md): external bus ownership, callback contracts,
   health, configuration trust and timing.
 - [Cooperative owner operations](owner-operations.md): transfer budgets, time,

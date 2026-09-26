@@ -16,6 +16,16 @@
 
 ### Added
 
+- Complete chip/peer feature matrix and field-integration guide; consistent
+  `init`, bound-profile initialization and common settings/sample/register names.
+- Pure configuration validation/encoding and expected register words, unit/count
+  helpers, cached sample timestamp/fresh-conversion provenance and age checks,
+  health snapshots, statistics reset and explicit outside-change invalidation.
+- Bookended live register snapshots with explicit temperature trust flags.
+- Explicit shared-bus general-call reset and receive-only SMBus Alert Response,
+  preserving raw status and model-specific alarm-cause semantics.
+- Cooperative discovery/scan/self-check and a full configuration test with
+  baseline restoration, plus field-oriented readback and freshness CLI commands.
 - Cooperative initialization, configuration, recovery, shutdown and read jobs,
   with bounded transfers per poll, operation deadlines, cancellation, staged
   desired settings and retained exactly-once results. Legacy synchronous APIs

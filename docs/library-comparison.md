@@ -39,3 +39,10 @@ OPT4001 supplies the repository shape and terminal presentation. ADS1115 supplie
 - Sibling build conventions: `library.json` as version source, generated version header and component manifest, C++17 CMake component, PlatformIO S2/S3 Arduino environments and native tests, Windows `scripts/pio.cmd`, explicit framework-free compilation, CLI-contract checks. Hardware validation is a separate claim from builds and simulated transport tests.
 
 These sibling libraries deliberately differ in health gating and cooperative method names. Some use a latched OFFLINE state; LDC1614 and LSM6DS3TR expose transport statistics alongside separate operation/configuration state. Status enum ordinals are not a shared ABI, and device-specific errors vary. Matching every historical API byte-for-byte is neither possible nor appropriate; TMP1x2 follows the common conventions while keeping its sensor-specific protocol explicit.
+
+The [feature coverage matrix](feature-coverage.md) also maps canonical initializer,
+settings/sample and register-word names, field helpers, full configuration tests
+and the chip's explicit shared-bus commands. `init` and bound-profile `begin`
+retain verified sensor initialization; `getSettings`, `getLastSample`,
+`readRegister16`/`writeRegister16` and `invalidateDeviceState` follow applicable
+sensor-library names without changing the older API's behavior.

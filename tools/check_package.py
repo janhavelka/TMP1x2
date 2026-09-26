@@ -16,6 +16,7 @@ REQUIRED = {
     "library.json", "idf_component.yml", "CMakeLists.txt", "LICENSE", "README.md",
     "src/TMP1x2.cpp", "include/TMP1x2/TMP1x2.h", "include/TMP1x2/Config.h",
     "include/TMP1x2/Status.h", "include/TMP1x2/CommandTable.h", "include/TMP1x2/Version.h",
+    "include/TMP1x2/BusOperations.h", "src/BusOperations.cpp",
     "examples/common/Tmp1x2Cli.h", "examples/common/Tmp1x2Cli.cpp",
     "examples/common/BoardConfig.h", "examples/01_basic_bringup_cli/main.cpp",
     "examples/esp_idf/basic/CMakeLists.txt", "examples/esp_idf/basic/main/CMakeLists.txt",
@@ -83,10 +84,13 @@ def main():
 #include <TMP1x2/Status.h>
 #include <TMP1x2/Version.h>
 #include <TMP1x2/TMP1x2.h>
+#include <TMP1x2/BusOperations.h>
 int main() {
   TMP1x2::TMP1x2 sensor;
+  TMP1x2::BusOperations::AlertResponse response;
+  const auto decoded = TMP1x2::BusOperations::decodeAlertResponse(0x90, response);
   sensor.end();
-  return sensor.isBound() || !TMP1x2::Status::Ok().ok();
+  return sensor.isBound() || !decoded.ok() || response.address != 0x48;
 }
 ''', encoding="utf-8")
         (workspace / "CMakeLists.txt").write_text(

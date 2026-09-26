@@ -31,7 +31,13 @@ This uses ESP-IDF directly, with the same pinned platform as the Arduino example
 Both board configurations use a 4 MB flash layout. The library component name is
 derived from the checkout directory, so renamed release archives also work.
 
-The application creates one `i2c_master` bus and eight fixed device handles for addresses 0x40–0x43 and 0x48–0x4B. Creating handles does not probe the device. An input task queues characters with backpressure; only `app_main` calls the command processor, driver and bus. There is no Arduino API or compatibility facade in this example. The root component has no framework dependencies; the example depends on IDF I2C, timer, GPIO and task facilities.
+The application creates one `i2c_master` bus, eight fixed sensor handles for
+0x40–0x43 and 0x48–0x4B, and two dedicated handles for explicit general-call/ARA
+commands at 0x00 and 0x0C. Creating handles does not probe or reset a device. An
+input task queues characters with backpressure; only `app_main` calls the command
+processor, driver and bus. There is no Arduino API or compatibility facade in this
+example. The root component has no framework dependencies; the example depends
+on IDF I2C, timer, GPIO and task facilities.
 
 ## Typical session
 
@@ -86,7 +92,7 @@ discard the whole line; backspace/DEL edits the current valid line. Ended-state
 `addr`/`model` changes update the bus-silent binding immediately, so subsequent
 `probe` and `recover` use the target shown by `cfg`.
 
-`health` reads cached driver state, dirty-state cause, pending/ready conversion flags and independent adapter counters. Scans/probes affect adapter statistics but not driver health. OFFLINE is diagnostic; explicit operations can restore READY. `cfg` shows desired settings, not hardware readback. A validated setting is retained when a write fails ambiguously; health reports dirty configuration and `recover` explicitly reapplies it. Raw writes also dirty managed configuration. `end`, `bind` and `unbind` do not touch the bus; `shutdown` explicitly changes sensor power mode. There is no general-call reset command.
+`health` reads cached driver state, dirty-state cause, pending/ready conversion flags and independent adapter counters. Scans/probes affect adapter statistics but not driver health. OFFLINE is diagnostic; explicit operations can restore READY. `cfg` shows desired settings, not hardware readback. A validated setting is retained when a write fails ambiguously; health reports dirty configuration and `recover` explicitly reapplies it. Raw writes also dirty managed configuration. `end`, `bind` and `unbind` do not touch the bus; `shutdown` explicitly changes sensor power mode. Shared-bus reset is available only through the explicit maintenance command described below.
 
 Any sensor-register read can acknowledge the ALERT latch in interrupt mode,
 including config, dump, health-independent probe and verification reads.
@@ -104,9 +110,65 @@ Additional diagnostics:
 | `rawread <0..3>`, `rawwrite <1..3> <raw16>`, `rawdump` | Bound-only raw register access without tracked health; writes retain dirty-state uncertainty |
 | `timing`, `convert <raw16>` | Conversion bounds/rates and pure temperature-register decoding |
 | `thcalc <C> [normal/extended]`, `thdecode <raw16> [normal/extended]` | Pure threshold encoding/decoding without I2C |
+| `tempf`, `raw`, `status_raw` | Managed Fahrenheit acquisition, tracked TEMP word, and CONFIG word diagnostics |
+| `freshness [max_age_ms]` | Cached sample age/provenance and trust; no I2C, no claim of a new continuous conversion |
+| `settings values` | Accepted setting values, formats and threshold ranges without I2C |
+| `settings read/live` | Cooperative live configuration/threshold comparison against desired settings |
+| `snapshot read` | Five-read CONFIG-bookended register snapshot with explicit temperature trust |
+| `healthreset` | Idle reset of cumulative tracked totals only; preserves live state and last fault |
 
 Run summaries preserve first/last errors and identify saturated counters as lower
 bounds. Successful register transactions and acquired samples are distinct from
 the driver's tracked physical-transfer counters.
+
+## Comprehensive test workflows
+
+`scan` and `discover` now probe one address per tick. `job` reports cached
+progress and `result` reports the last completion. `stop`/`cancel` end these
+read-only workflows without further bus traffic. Scan covers 0x08..0x77;
+discovery covers only the eight possible sensor addresses. An ACK is not chip
+identification; a transport error other than address NACK is reported separately.
+
+`selfcheck` or bare `selftest` runs a cooperative read-only sequence with
+pass/fail/skip counts: interface plausibility, configuration, thresholds,
+temperature and optional physical GPIO. Reads may acknowledge interrupt ALERT.
+An unavailable GPIO is a skipped check. This workflow does not establish sensor
+accuracy or prove a new continuous-mode conversion.
+
+`selftest full` explicitly changes sensor configuration through 18 verified
+profiles covering every conversion rate, both modes/formats, both thermostat
+modes, both polarities, all fault queues and representative threshold windows.
+It captures the original desired profile and restores it at the end. Test
+thresholds are chosen to remain representable when normal format is exercised.
+The result reports test outcomes and restoration separately; register verification
+does not replace physical thermostat or accuracy testing.
+
+During the full test, the first `stop`/`cancel` cancels the active case and schedules
+bounded baseline restoration. Polling continues while restoring. A second cancel
+aborts restoration, retains the baseline as the desired profile and requires
+explicit recovery. If restoration cannot reach hardware, that failure remains
+visible; the CLI does not claim the old hardware profile was restored. A last-
+resort bus-silent baseline rebind starts a new driver-health session, while the
+diagnostic result and adapter counters retain the failure evidence.
+
+## Explicit shared-bus maintenance
+
+`busreset` (or `reset all`) sends general-call reset to **every compatible device
+on the bus**. Bare `reset` does not issue it. Stop work on other affected bus
+targets before using this command. The CLI invalidates its own device before
+the attempt, including on ambiguous transfer failure; initialize/recover this
+device and every other affected driver afterward. No initialization, self-test,
+stress or recovery command sends a general-call reset implicitly.
+
+`ara` / `alertresponse` performs one receive-only SMBus Alert Response transaction.
+It reports the raw byte, winning address and status bit. Cause decoding is used
+only for the selected known model/address, because TMP102 and TMP112 publish
+different low-bit mappings. This acknowledges the winning device's interrupt;
+it does not automatically drain all responders. Address-select TMP112D supports
+this protocol despite lacking a physical ALERT pin.
+
+Both commands affect adapter counters and bypass per-device tracked health.
+See [BusOperations](../docs/bus-operations.md) for framing, uncertainty and exact
+model-specific semantics.
 
 Actual hardware and native-IDF build validation are reported in the repository validation notes; successful host tests do not establish those claims.

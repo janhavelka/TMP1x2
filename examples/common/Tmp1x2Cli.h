@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include "TMP1x2/TMP1x2.h"
+#include "TMP1x2/BusOperations.h"
 
 namespace tmp1x2_cli {
 struct TransferStats {
@@ -23,6 +24,8 @@ struct Platform {
   TMP1x2::Status (*probeAddress)(uint8_t, void*) = nullptr;
   TransferStats (*transferStats)(void*) = nullptr;
   void (*resetTransferStats)(void*) = nullptr;
+  TMP1x2::I2cWriteFn busWrite = nullptr;
+  TMP1x2::BusOperations::ReceiveFn busReceive = nullptr;
   void* user = nullptr;
   const char* framework = "unknown";
   const char* frameworkVersion = "unknown";
@@ -48,10 +51,21 @@ class Cli {
   void printRunStats();
   void recordRunResult(TMP1x2::Status result, const TMP1x2::Sample& sample, bool hasSample = true);
   void tickMixed(uint32_t nowMs);
-  void startOperation(TMP1x2::OperationKind kind, const TMP1x2::Config* desired = nullptr);
+  TMP1x2::Status startOperation(TMP1x2::OperationKind kind, const TMP1x2::Config* desired = nullptr);
   void finishOperation();
   void printOperation();
   void printOperationResult();
+  enum class DiagnosticKind : uint8_t { NONE, SCAN, DISCOVER, SELFCHECK, SETTINGS, SNAPSHOT, CONFIGTEST };
+  void startDiagnostic(DiagnosticKind kind);
+  void tickDiagnostic();
+  void finishDiagnostic(bool cancelled = false);
+  void printDiagnostic(bool last = false);
+  void printDiagnosticResult();
+  void diagnosticCheck(const char* label, TMP1x2::Status result, const char* skip = nullptr);
+  void cancelWork();
+  void restoreProfile();
+  void finishConfigTestOperation(const TMP1x2::OperationResult& result);
+  bool activeWork() const;
   void printSample(const TMP1x2::Sample& sample);
   void stop();
   const char* color(unsigned code) const;
@@ -65,6 +79,27 @@ class Cli {
   TMP1x2::OperationToken _operationToken = 0;
   TMP1x2::OperationResult _lastOperation{};
   bool _hasOperationResult = false;
+  bool _lastResultDiagnostic = false;
+  struct Diagnostic {
+    DiagnosticKind kind = DiagnosticKind::NONE;
+    bool active = false;
+    bool available = false;
+    bool cancelled = false;
+    bool restoring = false;
+    bool restoreComplete = false;
+    uint8_t phase = 0;
+    uint8_t nextAddress = 0;
+    uint32_t checked = 0;
+    uint32_t found = 0;
+    uint32_t failures = 0;
+    uint32_t passed = 0;
+    uint32_t skipped = 0;
+    uint32_t startedMs = 0;
+    uint32_t endedMs = 0;
+    TMP1x2::Status lastError{};
+    TMP1x2::Status restoreStatus{};
+    TMP1x2::Config baseline{};
+  } _diagnostic{}, _lastDiagnostic{};
   char _line[160]{};
   size_t _length = 0;
   bool _overflow = false;

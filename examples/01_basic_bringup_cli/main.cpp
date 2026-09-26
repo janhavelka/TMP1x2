@@ -63,6 +63,19 @@ TMP1x2::Status probe(uint8_t address, void*) {
   Wire.beginTransmission(address);
   return finish(mapWire(Wire.endTransmission(true)));
 }
+TMP1x2::Status receiveI2c(uint8_t address, uint8_t* rx, size_t length, uint32_t timeoutMs, void*) {
+  if (address != 0x0C || !rx || length != 1 || timeoutMs == 0 || timeoutMs > UINT16_MAX)
+    return TMP1x2::Status::Error(TMP1x2::Err::INVALID_PARAM, "invalid Alert Response receive");
+  Wire.setTimeOut(static_cast<uint16_t>(timeoutMs));
+  // SMBus ARA is receive-only: no register-pointer write precedes this read.
+  const size_t received = Wire.requestFrom(address, length, true);
+  if (received != length) {
+    while (Wire.available()) (void)Wire.read();
+    return finish(TMP1x2::Status::Error(TMP1x2::Err::I2C_ERROR, "Wire ARA short read", static_cast<int32_t>(received)));
+  }
+  rx[0] = static_cast<uint8_t>(Wire.read());
+  return finish(TMP1x2::Status::Ok());
+}
 uint32_t nowMs(void*) { return millis(); }
 void cooperativeYield(void*) { delay(1); }
 void output(void*, const char* format, va_list args) {
@@ -111,6 +124,8 @@ void setup() {
   platform.probeAddress = probe;
   platform.transferStats = stats;
   platform.resetTransferStats = resetStats;
+  platform.busWrite = writeI2c;
+  platform.busReceive = receiveI2c;
   platform.framework = "Arduino-ESP32";
 #ifdef ESP_ARDUINO_VERSION_STR
   platform.frameworkVersion = ESP_ARDUINO_VERSION_STR;

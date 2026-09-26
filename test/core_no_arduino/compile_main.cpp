@@ -3,6 +3,7 @@
 #define LOW 0x0       // Arduino GPIO macros also precede includes in consumers.
 #define HIGH 0x1
 #include "TMP1x2/TMP1x2.h"
+#include "TMP1x2/BusOperations.h"
 #include "TMP1x2/CommandTable.h"
 #include "TMP1x2/Version.h"
 static_assert(std::is_trivially_copyable<TMP1x2::Status>::value, "POD status");

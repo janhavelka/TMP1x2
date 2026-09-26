@@ -32,14 +32,18 @@ Status TMP1x2::validateConfig(const Config& c) {
     return Status::Error(Err::INVALID_CONFIG, "Address is not supported by selected model");
   if (c.i2cTimeoutMs == 0 || c.i2cTimeoutMs > 0x7FFFFFFFu)
     return Status::Error(Err::INVALID_CONFIG, "I2C timeout must be 1..INT32_MAX ms");
-  if (!isValidModel(c.model) || static_cast<uint8_t>(c.mode) > 1 ||
-      static_cast<uint8_t>(c.conversionRate) > 3 || static_cast<uint8_t>(c.alertMode) > 1 ||
-      static_cast<uint8_t>(c.alertPolarity) > 1 || static_cast<uint8_t>(c.faultQueue) > 3)
-    return Status::Error(Err::INVALID_CONFIG, "Invalid configuration enum");
   if (c.alertPin >= 0 && !hasAlertOutput(c.model))
     return Status::Error(Err::INVALID_CONFIG, "Selected model has no ALERT output");
   if (c.alertPin < -1 || (c.alertPin >= 0 && !c.gpioRead))
     return Status::Error(Err::INVALID_CONFIG, "Configured ALERT pin requires GPIO callback");
+  return validateSettings(c);
+}
+
+Status TMP1x2::validateSettings(const Config& c) {
+  if (static_cast<uint8_t>(c.mode) > 1 || static_cast<uint8_t>(c.conversionRate) > 3 ||
+      static_cast<uint8_t>(c.alertMode) > 1 || static_cast<uint8_t>(c.alertPolarity) > 1 ||
+      static_cast<uint8_t>(c.faultQueue) > 3)
+    return Status::Error(Err::INVALID_CONFIG, "Invalid configuration enum");
   uint16_t low = 0, high = 0;
   if (!encodeThreshold(c.lowThresholdC, c.extendedMode, low).ok() ||
       !encodeThreshold(c.highThresholdC, c.extendedMode, high).ok() ||
@@ -48,7 +52,7 @@ Status TMP1x2::validateConfig(const Config& c) {
   return Status::Ok();
 }
 
-uint16_t TMP1x2::encodeConfiguration(const Config& c) {
+uint16_t TMP1x2::packConfiguration(const Config& c) {
   return static_cast<uint16_t>(cmd::MASK_RESOLUTION |
       (static_cast<uint16_t>(c.faultQueue) << 11) |
       (static_cast<uint16_t>(c.alertPolarity) << 10) |
@@ -56,6 +60,40 @@ uint16_t TMP1x2::encodeConfiguration(const Config& c) {
       (static_cast<uint16_t>(c.mode) << 8) |
       (static_cast<uint16_t>(c.conversionRate) << 6) |
       (c.extendedMode ? cmd::MASK_EXTENDED_MODE : 0));
+}
+
+Config TMP1x2::defaultConfig(Model model) {
+  Config config;
+  config.model = model;
+  config.i2cAddress = modelAddressMin(model);
+  return config;
+}
+
+Status TMP1x2::encodeConfiguration(const Config& config, uint16_t& out) {
+  const Status status = validateSettings(config);
+  if (!status.ok()) return status;
+  out = packConfiguration(config);
+  return Status::Ok();
+}
+
+Status TMP1x2::expectedConfigurationRegister(const Config& config, uint8_t reg,
+                                            uint16_t& value, uint16_t& mask) {
+  if (reg < cmd::REG_CONFIG || reg > cmd::REG_THIGH)
+    return Status::Error(Err::INVALID_PARAM, "Register is not persistent configuration");
+  const Status status = validateSettings(config);
+  if (!status.ok()) return status;
+  uint16_t expected = 0;
+  uint16_t comparisonMask = 0xFFFFU;
+  if (reg == cmd::REG_CONFIG) {
+    expected = packConfiguration(config);
+    comparisonMask = cmd::MASK_WRITABLE_CONFIG;
+  } else {
+    (void)encodeThreshold(reg == cmd::REG_TLOW ? config.lowThresholdC : config.highThresholdC,
+                          config.extendedMode, expected);
+  }
+  value = expected;
+  mask = comparisonMask;
+  return Status::Ok();
 }
 
 Status TMP1x2::bind(const Config& config) {
@@ -108,6 +146,7 @@ void TMP1x2::unbind() {
   _lastSample = Sample{};
   _consecutiveFailures = 0;
   _totalFailures = _totalSuccess = _lastOkMs = _lastErrorMs = 0;
+  _lastOkTimeValid = _lastErrorTimeValid = false;
   _lastError = Status::Ok();
 }
 
@@ -164,12 +203,14 @@ Status TMP1x2::track(Status status) {
     if (_totalSuccess != UINT32_MAX) ++_totalSuccess;
     _consecutiveFailures = 0;
     _lastOkMs = now();
+    _lastOkTimeValid = clockKnown();
     if (_initialized) _state = DriverState::READY;
   } else if (healthFailure(status.code)) {
     if (_totalFailures != UINT32_MAX) ++_totalFailures;
     if (_consecutiveFailures != UINT8_MAX) ++_consecutiveFailures;
     _lastError = status;
     _lastErrorMs = now();
+    _lastErrorTimeValid = clockKnown();
     if (_initialized)
       _state = _consecutiveFailures >= _config.offlineThreshold ?
           DriverState::OFFLINE : DriverState::DEGRADED;
@@ -235,7 +276,7 @@ Status TMP1x2::verify(bool tracked) {
   if (!status.ok()) return status;
   if (!decodeConfiguration(config).valid ||
       (config & cmd::MASK_WRITABLE_CONFIG) !=
-          (encodeConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG)) {
+          (packConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG)) {
     status = Status::Error(Err::CONFIG_MISMATCH, "Configuration readback mismatch", config);
     markConfigurationDirty(status, config);
     return status;
@@ -259,7 +300,7 @@ void TMP1x2::beginApply(const Config& desired, bool owner) {
   _apply.phase = ApplyPhase::OBSERVE;
   _apply.desired = desired;
   _apply.owner = owner;
-  _apply.config = encodeConfiguration(desired);
+  _apply.config = packConfiguration(desired);
   (void)encodeThreshold(desired.lowThresholdC, desired.extendedMode, _apply.low);
   (void)encodeThreshold(desired.highThresholdC, desired.extendedMode, _apply.high);
 }
@@ -298,7 +339,7 @@ Status TMP1x2::stepApply(bool& transferred) {
       if (((raw & cmd::MASK_EXTENDED_MODE) != 0) != _config.extendedMode)
         _formatRefreshPending = true;
       if (_apply.owner && _initialized && (raw & cmd::MASK_WRITABLE_CONFIG) !=
-          (encodeConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG))
+          (packConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG))
         markConfigurationDirty(Status::Error(Err::CONFIG_MISMATCH,
             "Observed configuration differs from desired settings", raw), raw);
       _apply.refresh = _formatRefreshPending ||
@@ -462,6 +503,15 @@ Status TMP1x2::recover() {
   return Status::Ok();
 }
 
+Status TMP1x2::invalidateDeviceState() {
+  if (jobLocked()) return Status::Error(Err::BUSY, "Owner operation or result is pending");
+  if (!_bound) return Status::Error(Err::NOT_BOUND, "No transport is bound");
+  _formatRefreshPending = true;
+  markDirty(Status::Error(Err::CONFIG_MISMATCH, "External hardware state change requires recovery"));
+  _hasSample = false;
+  return Status::Ok();
+}
+
 Status TMP1x2::admit(OperationKind kind, const Config& desired, uint32_t nowMs,
                       uint32_t timeoutMs, OperationToken& token) {
   if (jobLocked()) return Status::Error(Err::BUSY, "Owner operation or result is pending");
@@ -598,7 +648,7 @@ Status TMP1x2::stepJob(bool& transferred) {
       status = read(cmd::REG_CONFIG, raw, true);
       if (!status.ok()) return status;
       if (!decodeConfiguration(raw).valid || (raw & cmd::MASK_WRITABLE_CONFIG) !=
-          (encodeConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG)) {
+          (packConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG)) {
         status = Status::Error(Err::CONFIG_MISMATCH, "One-shot configuration changed", raw);
         markConfigurationDirty(status, raw);
         return status;
@@ -614,7 +664,7 @@ Status TMP1x2::stepJob(bool& transferred) {
     case JobPhase::READ_TRIGGER:
       transferred = true;
       _jobEffect = true;
-      status = write(cmd::REG_CONFIG, encodeConfiguration(_config) | cmd::MASK_OS, true);
+      status = write(cmd::REG_CONFIG, packConfiguration(_config) | cmd::MASK_OS, true);
       if (!status.ok()) return status;
       _conversionStarted = true;
       _conversionReady = false;
@@ -643,6 +693,8 @@ Status TMP1x2::stepJob(bool& transferred) {
       status = decodeObservedTemperature(raw, _jobSample);
       if (!status.ok()) return status;
       _jobSample.timestampMs = now();
+      _jobSample.timestampValid = clockKnown();
+      _jobSample.freshConversion = _config.mode == Mode::SHUTDOWN;
       _jobPhase = JobPhase::COMPLETE;
       return pending;
     case JobPhase::COMPLETE:
@@ -780,9 +832,74 @@ Status TMP1x2::readConfiguration(ConfigurationInfo& out) {
     return status;
   }
   if ((raw & cmd::MASK_WRITABLE_CONFIG) !=
-      (encodeConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG))
+      (packConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG))
     markConfigurationDirty(Status::Error(Err::CONFIG_MISMATCH, "Observed configuration differs from desired settings", raw), raw);
   out = info;
+  return Status::Ok();
+}
+
+Status TMP1x2::readConfiguration(uint16_t& out) {
+  ConfigurationInfo info;
+  const Status status = readConfiguration(info);
+  if (status.ok()) out = info.raw;
+  return status;
+}
+
+Status TMP1x2::readSnapshot(RegisterSnapshot& out) {
+  Status status = guard();
+  if (!status.ok()) return status;
+  RegisterSnapshot snapshot;
+  ConfigurationInfo first;
+  status = readConfiguration(first);
+  if (!status.ok()) return status;
+  status = read(cmd::REG_TEMPERATURE, snapshot.rawTemperature, true);
+  if (!status.ok()) return status;
+  const uint32_t temperatureAt = now();
+  const bool temperatureTimeValid = clockKnown();
+  if (((snapshot.rawTemperature & cmd::MASK_TEMP_EXTENDED) != 0) != _config.extendedMode) {
+    _formatRefreshPending = true;
+    markDirty(Status::Error(Err::CONFIG_MISMATCH, "Observed temperature format differs from desired settings",
+                           snapshot.rawTemperature));
+  }
+  status = decodeTemperature(snapshot.rawTemperature, snapshot.temperature);
+  snapshot.temperatureDecoded = status.ok();
+  if (!status.ok()) markDirty(status);
+  else {
+    snapshot.temperature.timestampMs = temperatureAt;
+    snapshot.temperature.timestampValid = temperatureTimeValid;
+  }
+  uint16_t expectedLow = 0, expectedHigh = 0;
+  (void)encodeThreshold(_config.lowThresholdC, _config.extendedMode, expectedLow);
+  (void)encodeThreshold(_config.highThresholdC, _config.extendedMode, expectedHigh);
+  status = read(cmd::REG_TLOW, snapshot.rawLowThreshold, true);
+  if (!status.ok()) return status;
+  if (snapshot.rawLowThreshold != expectedLow)
+    markDirty(Status::Error(Err::CONFIG_MISMATCH, "Observed low threshold differs from desired settings"));
+  status = read(cmd::REG_THIGH, snapshot.rawHighThreshold, true);
+  if (!status.ok()) return status;
+  if (snapshot.rawHighThreshold != expectedHigh)
+    markDirty(Status::Error(Err::CONFIG_MISMATCH, "Observed high threshold differs from desired settings"));
+  status = readConfiguration(snapshot.configuration);
+  if (!status.ok()) return status;
+  if ((first.raw & cmd::MASK_WRITABLE_CONFIG) !=
+      (snapshot.configuration.raw & cmd::MASK_WRITABLE_CONFIG)) {
+    status = Status::Error(Err::CONFIG_MISMATCH, "Configuration changed during register snapshot",
+                           snapshot.configuration.raw);
+    markConfigurationDirty(status, snapshot.configuration.raw);
+    return status;
+  }
+  const bool extended = snapshot.configuration.extendedMode;
+  snapshot.lowThresholdC = decodeThreshold(snapshot.rawLowThreshold, extended);
+  snapshot.highThresholdC = decodeThreshold(snapshot.rawHighThreshold, extended);
+  snapshot.configurationMatchesDesired = (snapshot.configuration.raw & cmd::MASK_WRITABLE_CONFIG) ==
+      (packConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG);
+  snapshot.thresholdsMatchDesired = extended == _config.extendedMode &&
+      snapshot.rawLowThreshold == expectedLow && snapshot.rawHighThreshold == expectedHigh;
+  snapshot.temperatureTrusted = snapshot.temperatureDecoded && !_dirty && !_formatRefreshPending &&
+      snapshot.temperature.extendedMode == snapshot.configuration.extendedMode;
+  snapshot.timestampMs = now();
+  snapshot.timestampValid = clockKnown();
+  out = snapshot;
   return Status::Ok();
 }
 
@@ -797,7 +914,7 @@ Status TMP1x2::readThresholds(float& lowC, float& highC) {
     markConfigurationDirty(status, config); return status;
   }
   if ((config & cmd::MASK_WRITABLE_CONFIG) !=
-      (encodeConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG))
+      (packConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG))
     markConfigurationDirty(Status::Error(Err::CONFIG_MISMATCH, "Observed configuration differs from desired settings", config), config);
   status = read(cmd::REG_TLOW, low, true);
   if (status.ok()) status = read(cmd::REG_THIGH, high, true);
@@ -844,6 +961,7 @@ Status TMP1x2::readSample(Sample& out) {
   status = decodeObservedTemperature(raw, sample);
   if (!status.ok()) return status;
   sample.timestampMs = now();
+  sample.timestampValid = clockKnown();
   _lastSample = sample;
   _hasSample = true;
   out = sample;
@@ -869,6 +987,20 @@ Status TMP1x2::readTemperature(float& out) {
   return status;
 }
 
+Status TMP1x2::readTemperatureFahrenheit(float& out) {
+  float celsius = 0;
+  const Status status = readTemperature(celsius);
+  if (status.ok()) out = celsiusToFahrenheit(celsius);
+  return status;
+}
+
+Status TMP1x2::readTemperatureCounts(int16_t& out) {
+  Sample sample;
+  const Status status = readSample(sample);
+  if (status.ok()) out = sample.counts;
+  return status;
+}
+
 Status TMP1x2::startOneShot() {
   Status status = guard(true);
   if (!status.ok()) return status;
@@ -880,13 +1012,13 @@ Status TMP1x2::startOneShot() {
   if (!status.ok()) return status;
   if (!decodeConfiguration(current).valid ||
       (current & cmd::MASK_WRITABLE_CONFIG) !=
-          (encodeConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG)) {
+          (packConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG)) {
     status = Status::Error(Err::CONFIG_MISMATCH, "One-shot configuration changed", current);
     markConfigurationDirty(status, current); return status;
   }
   if (!(current & cmd::MASK_OS))
     return Status::Error(Err::BUSY, "Previous shutdown conversion is still active");
-  status = write(cmd::REG_CONFIG, encodeConfiguration(_config) | cmd::MASK_OS, true);
+  status = write(cmd::REG_CONFIG, packConfiguration(_config) | cmd::MASK_OS, true);
   if (!status.ok()) { markDirty(status); return status; }
   _conversionStarted = true;
   _conversionReady = false;
@@ -907,7 +1039,7 @@ Status TMP1x2::isConversionReady(bool& ready) {
   if (!status.ok()) return status;
   if (!decodeConfiguration(raw).valid ||
       (raw & cmd::MASK_WRITABLE_CONFIG) !=
-          (encodeConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG)) {
+          (packConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG)) {
     status = Status::Error(Err::CONFIG_MISMATCH, "One-shot configuration changed", raw);
     markConfigurationDirty(status, raw); return status;
   }
@@ -926,7 +1058,11 @@ Status TMP1x2::tryRead(Sample& out) {
   if (!status.ok()) return status;
   if (!ready) return notReady();
   status = readSample(out);
-  if (status.ok()) clearConversion();
+  if (status.ok()) {
+    out.freshConversion = true;
+    _lastSample.freshConversion = true;
+    clearConversion();
+  }
   return status;
 }
 
@@ -1004,14 +1140,21 @@ Status TMP1x2::decodeTemperature(uint16_t raw, Sample& out) {
 }
 
 Status TMP1x2::encodeThreshold(float celsius, bool extended, uint16_t& out) {
-  const float minimum = extended ? -256.0f : -128.0f;
-  const float maximum = extended ? 255.9375f : 127.9375f;
+  const float minimum = minimumThresholdC(extended);
+  const float maximum = maximumThresholdC(extended);
   if (!std::isfinite(celsius) || celsius < minimum || celsius > maximum)
     return Status::Error(Err::INVALID_PARAM, "Threshold outside register range");
   const int32_t counts = static_cast<int32_t>(std::round(celsius * 16.0f));
   const uint16_t bits = static_cast<uint16_t>(counts) & (extended ? 0x1FFFu : 0x0FFFu);
   out = static_cast<uint16_t>(bits << (extended ? 3 : 4));
   return Status::Ok();
+}
+
+Status TMP1x2::celsiusToCounts(float celsius, bool extended, int16_t& out) {
+  uint16_t raw = 0;
+  const Status status = encodeThreshold(celsius, extended, raw);
+  if (status.ok()) out = signedCounts(raw, extended);
+  return status;
 }
 
 float TMP1x2::decodeThreshold(uint16_t raw, bool extended) {
@@ -1045,6 +1188,62 @@ uint32_t TMP1x2::conversionPeriodMs(ConversionRate rate) {
   return 0;
 }
 
+float TMP1x2::conversionRateHz(ConversionRate rate) {
+  switch (rate) {
+    case ConversionRate::HZ_0_25: return 0.25f;
+    case ConversionRate::HZ_1: return 1.0f;
+    case ConversionRate::HZ_4: return 4.0f;
+    case ConversionRate::HZ_8: return 8.0f;
+  }
+  return 0;
+}
+
+uint8_t TMP1x2::faultQueueCount(FaultQueue value) {
+  switch (value) {
+    case FaultQueue::FAULTS_1: return 1;
+    case FaultQueue::FAULTS_2: return 2;
+    case FaultQueue::FAULTS_4: return 4;
+    case FaultQueue::FAULTS_6: return 6;
+  }
+  return 0;
+}
+
+HealthSnapshot TMP1x2::healthSnapshot() const {
+  HealthSnapshot snapshot;
+  snapshot.state = _state;
+  snapshot.initialized = _initialized;
+  snapshot.consecutiveFailures = _consecutiveFailures;
+  snapshot.totalFailures = _totalFailures;
+  snapshot.totalSuccess = _totalSuccess;
+  snapshot.lastOkMs = _lastOkMs;
+  snapshot.lastErrorMs = _lastErrorMs;
+  snapshot.lastOkTimeValid = _lastOkTimeValid;
+  snapshot.lastErrorTimeValid = _lastErrorTimeValid;
+  snapshot.lastError = _lastError;
+  return snapshot;
+}
+
+Status TMP1x2::getLastSample(Sample& out) const {
+  if (!_hasSample) return notReady();
+  out = _lastSample;
+  return Status::Ok();
+}
+
+Status TMP1x2::getLastSample(Sample& out, uint32_t nowMs, uint32_t maxAgeMs) const {
+  if (maxAgeMs > 0x7FFFFFFFU)
+    return Status::Error(Err::INVALID_PARAM, "Sample age budget must be 0..INT32_MAX ms");
+  if (!_hasSample) return notReady();
+  if (_dirty) return Status::Error(Err::INVALID_CONFIG, "Cached sample configuration is no longer trusted");
+  if (!sampleFresh(nowMs, maxAgeMs)) return notReady();
+  out = _lastSample;
+  return Status::Ok();
+}
+
+bool TMP1x2::sampleFresh(uint32_t nowMs, uint32_t maxAgeMs) const {
+  return _initialized && !_dirty && _hasSample && _lastSample.timestampValid &&
+      maxAgeMs <= 0x7FFFFFFFU && static_cast<uint32_t>(nowMs - _lastSample.timestampMs) <= maxAgeMs;
+}
+
 SettingsSnapshot TMP1x2::getSettingsSnapshot() const {
   SettingsSnapshot snapshot;
   snapshot.bound = _bound;
@@ -1062,5 +1261,9 @@ SettingsSnapshot TMP1x2::getSettingsSnapshot() const {
 
 uint32_t TMP1x2::sampleAgeMs() const {
   return _hasSample ? static_cast<uint32_t>(now() - _lastSample.timestampMs) : UINT32_MAX;
+}
+
+uint32_t TMP1x2::sampleAgeMs(uint32_t nowMs) const {
+  return _hasSample ? static_cast<uint32_t>(nowMs - _lastSample.timestampMs) : UINT32_MAX;
 }
 } // namespace TMP1x2

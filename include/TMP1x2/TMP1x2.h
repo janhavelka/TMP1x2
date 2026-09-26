@@ -19,6 +19,20 @@ struct Sample {
   float celsius = 0;
   bool extendedMode = false;
   uint32_t timestampMs = 0;
+  bool timestampValid = false; ///< Clock was available when this register was read.
+  bool freshConversion = false; ///< Driver confirmed completion of its requested one-shot.
+};
+struct HealthSnapshot {
+  DriverState state = DriverState::UNINIT;
+  bool initialized = false;
+  uint8_t consecutiveFailures = 0;
+  uint32_t totalFailures = 0;
+  uint32_t totalSuccess = 0;
+  uint32_t lastOkMs = 0;
+  uint32_t lastErrorMs = 0;
+  bool lastOkTimeValid = false;
+  bool lastErrorTimeValid = false;
+  Status lastError = Status::Ok();
 };
 using OperationToken = uint32_t; ///< Nonzero identity, never reused by an instance.
 enum class OperationKind : uint8_t { NONE, INITIALIZE, CONFIGURE, RECOVER, SHUTDOWN, READ };
@@ -75,6 +89,23 @@ struct ConfigurationInfo {
   AlertPolarity alertPolarity = AlertPolarity::ACTIVE_LOW;
   FaultQueue faultQueue = FaultQueue::FAULTS_1;
 };
+/// Five tracked reads: CONFIG, TEMP, TLOW, THIGH, CONFIG. This is not atomic;
+/// CONFIG bookends detect observed persistent-field changes, not unseen changes.
+struct RegisterSnapshot {
+  ConfigurationInfo configuration{};
+  uint16_t rawTemperature = 0;
+  uint16_t rawLowThreshold = 0;
+  uint16_t rawHighThreshold = 0;
+  float lowThresholdC = 0;
+  float highThresholdC = 0;
+  Sample temperature{};
+  bool temperatureDecoded = false;
+  bool temperatureTrusted = false; ///< False when configuration/format is uncertain.
+  bool configurationMatchesDesired = false;
+  bool thresholdsMatchDesired = false;
+  uint32_t timestampMs = 0;
+  bool timestampValid = false;
+};
 struct SettingsSnapshot {
   bool bound = false;
   bool initialized = false;
@@ -129,6 +160,10 @@ public:
   /// shutdown from continuous also requires nowMs to settle the old conversion
   /// (35 ms plus 1-ms margin). Same-format continuous initialization needs no clock callback.
   Status begin(const Config& config);
+  Status init(const Config& config) { return begin(config); }
+  /// Initialize/reapply the existing binding, with recover() timing and guards.
+  Status init() { return recover(); }
+  Status begin() { return init(); }
   /// Local deinitialization only; retains binding/config and never touches I2C.
   /// Cancels an owner operation and retains its terminal result until consumed.
   void end();
@@ -140,6 +175,10 @@ public:
   Status probe();
   /// Reapply/verify all desired settings, including after failed begin or OFFLINE.
   Status recover();
+  /// Notify an external reset/write or other loss of hardware knowledge. No I2C;
+  /// preserves health/binding, invalidates samples and requires format recovery.
+  /// Active operations or retained results return BUSY without changing state.
+  Status invalidateDeviceState();
   /// Owner operations: admission, cancellation and result consumption are
   /// bus-silent. A bound transport is required. timeoutMs is 1..INT32_MAX.
   /// IN_PROGRESS means accepted; token remains unchanged on rejection.
@@ -147,6 +186,9 @@ public:
   /// until the first write attempt. Once committed, desired settings survive
   /// cancellation/failure and dirty evidence requires a complete recovery.
   Status startInitialize(uint32_t nowMs, uint32_t timeoutMs, OperationToken& token);
+  Status startInit(uint32_t nowMs, uint32_t timeoutMs, OperationToken& token) {
+    return startInitialize(nowMs, timeoutMs, token);
+  }
   Status startConfigure(const Config& desired, uint32_t nowMs, uint32_t timeoutMs, OperationToken& token);
   Status startRecover(uint32_t nowMs, uint32_t timeoutMs, OperationToken& token);
   Status startShutdown(uint32_t nowMs, uint32_t timeoutMs, OperationToken& token);
@@ -173,6 +215,12 @@ public:
   bool isOnline() const { return _initialized && _state != DriverState::OFFLINE; }
   const Config& getConfig() const { return _config; }
   SettingsSnapshot getSettingsSnapshot() const;
+  SettingsSnapshot getSettings() const { return getSettingsSnapshot(); }
+  Status getSettings(SettingsSnapshot& out) const { out = getSettingsSnapshot(); return Status::Ok(); }
+  HealthSnapshot healthSnapshot() const;
+  /// Reset cumulative observation counts only, without changing live health,
+  /// consecutive failures, timestamps, last fault, trust, samples or operations.
+  void resetStatistics() { _totalFailures = _totalSuccess = 0; }
   bool hardwareConfigDirty() const { return _dirty; }
   Status hardwareConfigDirtyError() const { return _dirtyError; }
   /// Counters count individual tracked transport outcomes only. Protocol
@@ -193,12 +241,28 @@ public:
   Status setAlertPolarity(AlertPolarity value);
   Status setFaultQueue(FaultQueue value);
   Status setThresholds(float lowC, float highC);
+  /// Cached desired values; these getters perform no I2C or live verification.
+  Mode getMode() const { return _config.mode; }
+  ConversionRate getConversionRate() const { return _config.conversionRate; }
+  bool getExtendedMode() const { return _config.extendedMode; }
+  AlertMode getAlertMode() const { return _config.alertMode; }
+  AlertPolarity getAlertPolarity() const { return _config.alertPolarity; }
+  FaultQueue getFaultQueue() const { return _config.faultQueue; }
+  float getLowThresholdC() const { return _config.lowThresholdC; }
+  float getHighThresholdC() const { return _config.highThresholdC; }
   /// A valid live read is returned even if different from desired config; such
   /// a difference latches dirty state so managed measurement needs recovery.
   /// Observing different EM also requires a fresh-format conversion, even if
   /// hardware later returns to desired EM or a setter adopts the observed EM.
   Status readConfiguration(ConfigurationInfo& out);
+  Status readConfiguration(uint16_t& out);
+  /// Diagnostic capture never updates the sample cache or claims a fresh
+  /// conversion. Raw/decoded values remain available when temperatureTrusted
+  /// is false. A changed CONFIG bookend or transfer failure leaves out unchanged.
+  Status readSnapshot(RegisterSnapshot& out);
   Status readThresholds(float& lowC, float& highC);
+  /// ADS1115/OPT4001-compatible spelling; reads live thresholds, not the cache.
+  Status getThresholds(float& lowC, float& highC) { return readThresholds(lowC, highC); }
   Status verifyConfiguration();
   /// Optional physical GPIO sample. Does not read or acknowledge sensor ALERT.
   Status readAlertPin(bool& active) const;
@@ -209,6 +273,8 @@ public:
   /// latches dirty/format-refresh evidence. Later managed reads require recovery.
   Status readSample(Sample& out);
   Status readTemperature(float& out);
+  Status readTemperatureFahrenheit(float& out);
+  Status readTemperatureCounts(int16_t& out);
   /// Requires desired SHUTDOWN mode and clean configuration. No allocation/wait.
   Status startOneShot();
   /// Hardware OS confirmation, gated by conservative conversion time when a
@@ -227,23 +293,60 @@ public:
   bool conversionReady() const { return _conversionReady; }
   bool hasSample() const { return _hasSample; }
   const Sample& lastSample() const { return _lastSample; }
+  /// Copy historical cache without I2C. Its presence does not prove current
+  /// configuration trust or physical freshness; inspect its provenance flags.
+  Status getLastSample(Sample& out) const;
+  /// Copy only a trusted cache with a known acquisition time within maxAgeMs
+  /// (0..INT32_MAX). Not proof of a new continuous-mode physical conversion.
+  Status getLastSample(Sample& out, uint32_t nowMs, uint32_t maxAgeMs) const;
+  uint32_t sampleTimestampMs() const { return _hasSample ? _lastSample.timestampMs : 0; }
+  bool sampleTimestampValid() const { return _hasSample && _lastSample.timestampValid; }
+  bool sampleFresh(uint32_t nowMs, uint32_t maxAgeMs) const;
   /// UINT32_MAX if no sample; otherwise unsigned elapsed time. Without a clock
   /// at acquisition the timestamp is zero and age is relative to that epoch.
   uint32_t sampleAgeMs() const;
+  /// Same epoch-relative convention as sampleAgeMs(); this does not observe
+  /// or update the clock. Use sampleFresh()/timestampValid for age validation.
+  uint32_t sampleAgeMs(uint32_t nowMs) const;
 
   Status readRegister(uint8_t reg, uint16_t& out);
   Status writeRegister(uint8_t reg, uint16_t value);
   Status readRegisterRaw(uint8_t reg, uint16_t& out);
   Status writeRegisterRaw(uint8_t reg, uint16_t value);
+  Status readRegister16(uint8_t reg, uint16_t& out) { return readRegister(reg, out); }
+  Status writeRegister16(uint8_t reg, uint16_t value) { return writeRegister(reg, value); }
+  /// Pure validation; no callbacks or state changes. validateSettings checks
+  /// only persistent register settings and needs no transport or clock hooks.
+  static Status validateConfig(const Config& config);
+  static Status validateSettings(const Config& config);
+  static Config defaultConfig(Model model = Model::TMP102);
+  /// Checked persistent CONFIG encoding; OS is always zero (not a trigger).
+  /// Output remains unchanged on invalid settings. No transport hooks required.
+  static Status encodeConfiguration(const Config& config, uint16_t& out);
+  /// Canonical CONFIG/TLOW/THIGH replay word and stable comparison mask.
+  /// Threshold masks also verify that reserved bits remain zero.
+  static Status expectedConfigurationRegister(const Config& config, uint8_t reg,
+                                              uint16_t& value, uint16_t& mask);
   static Status decodeTemperature(uint16_t raw, Sample& out);
   static Status encodeThreshold(float celsius, bool extended, uint16_t& out);
   static float decodeThreshold(uint16_t raw, bool extended);
   static ConfigurationInfo decodeConfiguration(uint16_t raw);
   static uint32_t conversionPeriodMs(ConversionRate rate);
+  static float conversionRateHz(ConversionRate rate);
+  static uint8_t faultQueueCount(FaultQueue value);
+  static constexpr uint32_t conversionTimeMaxMs() { return cmd::CONVERSION_TIME_MAX_MS; }
+  /// Conservative conversion execution bound, not the continuous sample period.
+  uint32_t getConversionTimeMs() const { return conversionTimeMaxMs(); }
+  static constexpr float temperatureResolutionC() { return 0.0625f; }
+  static constexpr float minimumThresholdC(bool extended) { return extended ? -256.0f : -128.0f; }
+  static constexpr float maximumThresholdC(bool extended) { return extended ? 255.9375f : 127.9375f; }
+  static constexpr float celsiusToFahrenheit(float celsius) { return celsius * 1.8f + 32.0f; }
+  static constexpr float fahrenheitToCelsius(float fahrenheit) { return (fahrenheit - 32.0f) / 1.8f; }
+  static constexpr float countsToCelsius(int16_t counts) { return static_cast<float>(counts) * 0.0625f; }
+  static Status celsiusToCounts(float celsius, bool extended, int16_t& out);
 
 private:
-  static Status validateConfig(const Config& config);
-  static uint16_t encodeConfiguration(const Config& config);
+  static uint16_t packConfiguration(const Config& config);
   Status guard(bool clean = false) const;
   Status read(uint8_t reg, uint16_t& out, bool tracked);
   Status write(uint8_t reg, uint16_t value, bool tracked);
@@ -309,6 +412,8 @@ private:
   uint32_t _totalSuccess = 0;
   uint32_t _lastOkMs = 0;
   uint32_t _lastErrorMs = 0;
+  bool _lastOkTimeValid = false;
+  bool _lastErrorTimeValid = false;
   Status _lastError = Status::Ok();
   ApplyState _apply{};
   OperationToken _nextToken = 0; ///< Deliberately survives bind/unbind.

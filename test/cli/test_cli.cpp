@@ -16,6 +16,12 @@ struct Fixture {
   bool stuck = false;
   bool pinLevel = false;
   unsigned gpioReads = 0;
+  unsigned busResets = 0;
+  unsigned receives = 0;
+  uint8_t alertResponse = 0x91;
+  bool failReceive = false;
+  int probeNackAddress = -1;
+  int probeErrorAddress = -1;
   unsigned probed[128]{};
   tmp1x2_cli::TransferStats adapter{};
   uint16_t regs[4] = {0x1900, 0x60A0, 0x4B00, 0x5000};
@@ -28,8 +34,20 @@ struct Fixture {
   static void resetStats(void* user) { static_cast<Fixture*>(user)->adapter = tmp1x2_cli::TransferStats{}; }
   static bool gpio(int, void* user) { auto& f = *static_cast<Fixture*>(user); ++f.gpioReads; return f.pinLevel; }
   static TMP1x2::Status probe(uint8_t address, void* user) {
-    auto& f = *static_cast<Fixture*>(user); ++f.transfers; ++f.probed[address]; f.adapter.record(true);
+    auto& f = *static_cast<Fixture*>(user); ++f.transfers; ++f.probed[address];
+    const bool nack = address == f.probeNackAddress, error = address == f.probeErrorAddress;
+    f.adapter.record(!nack && !error);
+    if (nack) return TMP1x2::Status::Error(TMP1x2::Err::I2C_NACK_ADDR, "scan NACK");
+    if (error) return TMP1x2::Status::Error(TMP1x2::Err::I2C_ERROR, "scan fault");
     return TMP1x2::Status::Ok();
+  }
+  static TMP1x2::Status receive(uint8_t address, uint8_t* out, size_t count, uint32_t timeout, void* user) {
+    auto& f = *static_cast<Fixture*>(user); ++f.transfers; ++f.receives; f.lastAddress = address;
+    if (address != 0x0C || count != 1 || !out || timeout == 0)
+      return TMP1x2::Status::Error(TMP1x2::Err::INVALID_PARAM, "ARA framing");
+    f.adapter.record(!f.failReceive);
+    if (f.failReceive) return TMP1x2::Status::Error(TMP1x2::Err::I2C_ERROR, "ARA fault");
+    out[0] = f.alertResponse; return TMP1x2::Status::Ok();
   }
   TMP1x2::Config config() {
     TMP1x2::Config c;
@@ -41,6 +59,7 @@ struct Fixture {
     tmp1x2_cli::Platform p;
     p.vprintf = print; p.nowMs = now; p.user = this;
     p.transferStats = stats; p.resetTransferStats = resetStats; p.probeAddress = probe;
+    p.busWrite = write; p.busReceive = receive;
     return p;
   }
   static void print(void* user, const char* format, va_list args) {
@@ -50,12 +69,17 @@ struct Fixture {
   static TMP1x2::Status write(uint8_t address, const uint8_t* data, size_t n, uint32_t, void* user) {
     auto& f = *static_cast<Fixture*>(user); ++f.transfers; ++f.writes;
     f.lastAddress = address;
+    if (address == 0 && n == 1 && data[0] == 0x06) ++f.busResets;
     if (f.writeFailures) {
       --f.writeFailures;
       f.adapter.record(false);
       return TMP1x2::Status::Error(TMP1x2::Err::I2C_ERROR, "injected write failure");
     }
     f.adapter.record(true);
+    if (address == 0 && n == 1 && data[0] == 0x06) {
+      f.regs[0] = 0; f.regs[1] = 0x60A0; f.regs[2] = 0x4B00; f.regs[3] = 0x5000;
+      f.pending = false; return TMP1x2::Status::Ok();
+    }
     if (n != 3 || data[0] < 1 || data[0] > 3) return TMP1x2::Status::Error(TMP1x2::Err::INVALID_PARAM, "framing");
     auto word = static_cast<uint16_t>((static_cast<uint16_t>(data[1]) << 8U) | data[2]);
     f.regs[data[0]] = data[0] == 1 ? static_cast<uint16_t>((word & 0x1FD0U) | 0x6020U) : word;
@@ -349,6 +373,7 @@ int main() {
     family.pinLevel = true; shell.processCommand("intpin");
     CHECK(family.output.find("Physical ALERT: inactive") != std::string::npos);
     shell.processCommand("discover");
+    family.settle(shell);
     for (unsigned address = 0; address < 128; ++address)
       CHECK(family.probed[address] == ((address >= 0x40 && address <= 0x43) || (address >= 0x48 && address <= 0x4B) ? 1U : 0U));
     shell.processCommand("end"); const unsigned afterEnd = family.transfers;
@@ -409,6 +434,207 @@ int main() {
     CHECK(owner.output.find("Result sample: 25.0000 C") != std::string::npos);
     CHECK(owner.transfers == afterRead);
   }
-  std::puts("CLI parsing, diagnostics, raw access, model families, sampling summaries and cooperative workflow checks passed");
+  {
+    Fixture diagnostic; tmp1x2_cli::Cli shell;
+    auto cfg = diagnostic.config(); cfg.alertPin = 21; cfg.gpioRead = Fixture::gpio; cfg.gpioUser = &diagnostic;
+    shell.setup(diagnostic.platform(), cfg); diagnostic.settle(shell); shell.processCommand("color off");
+    unsigned beforeDiagnostic = diagnostic.transfers; const unsigned initialWrites = diagnostic.writes;
+    diagnostic.output.clear(); shell.processCommand("selfcheck"); CHECK(diagnostic.transfers == beforeDiagnostic);
+    for (unsigned phase = 0; phase < 9; ++phase) {
+      const unsigned beforeTick = diagnostic.transfers;
+      shell.tick(); CHECK(diagnostic.transfers - beforeTick <= 5); ++diagnostic.timeMs;
+    }
+    CHECK(diagnostic.writes == initialWrites);
+    CHECK(diagnostic.gpioReads == 1);
+    CHECK(diagnostic.output.find("complete pass=9 fail=0 skip=0") != std::string::npos);
+    CHECK(diagnostic.output.find("temperature-trusted=yes") != std::string::npos);
+    CHECK(diagnostic.output.find("does not prove a fresh conversion") != std::string::npos);
+    beforeDiagnostic = diagnostic.transfers;
+    diagnostic.output.clear(); shell.processCommand("result"); CHECK(diagnostic.transfers == beforeDiagnostic);
+    CHECK(diagnostic.output.find("Diagnostic: selfcheck") != std::string::npos);
+    shell.processCommand("settings live"); shell.tick();
+    diagnostic.output.clear(); shell.processCommand("result");
+    CHECK(diagnostic.output.find("Diagnostic: selfcheck") != std::string::npos); // Last completed result survives a new job.
+    diagnostic.settle(shell);
+    CHECK(diagnostic.output.find("complete pass=3 fail=0 skip=0") != std::string::npos);
+    diagnostic.output.clear(); shell.processCommand("snapshot read"); shell.tick();
+    CHECK(diagnostic.output.find("complete pass=1 fail=0 skip=0") != std::string::npos);
+    shell.processCommand("mode shutdown"); diagnostic.settle(shell);
+    const unsigned shutdownWrites = diagnostic.writes;
+    diagnostic.output.clear(); shell.processCommand("selftest"); diagnostic.settle(shell);
+    CHECK(diagnostic.writes == shutdownWrites);
+    CHECK(diagnostic.output.find("complete pass=9 fail=0 skip=0") != std::string::npos);
+    diagnostic.output.clear(); shell.processCommand("selfcheck"); shell.tick(); shell.tick();
+    diagnostic.readFailures = 1; diagnostic.settle(shell);
+    CHECK(diagnostic.output.find("complete pass=8 fail=1 skip=0") != std::string::npos);
+    CHECK(diagnostic.output.find("[FAIL] presence/configuration plausibility") != std::string::npos);
+    shell.processCommand("selfcheck"); shell.tick(); shell.tick(); shell.tick();
+    beforeDiagnostic = diagnostic.transfers; shell.processCommand("stop"); diagnostic.settle(shell);
+    CHECK(diagnostic.transfers == beforeDiagnostic);
+    diagnostic.output.clear(); shell.processCommand("result");
+    CHECK(diagnostic.output.find("Diagnostic summary: cancelled") != std::string::npos);
+    shell.processCommand("unbind"); diagnostic.output.clear(); shell.processCommand("selfcheck"); diagnostic.settle(shell);
+    CHECK(diagnostic.transfers == beforeDiagnostic);
+    CHECK(diagnostic.output.find("complete pass=0 fail=2 skip=7") != std::string::npos);
+    for (const char* command : {"selftest ful", "selftest full extra", "selfcheck full", "settings live extra", "snapshot read extra"})
+      shell.processCommand(command);
+    CHECK(diagnostic.transfers == beforeDiagnostic);
+  }
+  {
+    Fixture scanning; tmp1x2_cli::Cli shell;
+    shell.setup(scanning.platform(), scanning.config()); scanning.settle(shell); shell.processCommand("color off");
+    scanning.output.clear(); shell.processCommand("health");
+    const auto health = scanning.output.substr(0, scanning.output.find('\n'));
+    const unsigned initial = scanning.transfers;
+    scanning.probeNackAddress = 0x40; scanning.probeErrorAddress = 0x49;
+    scanning.output.clear(); shell.processCommand("discover"); CHECK(scanning.transfers == initial);
+    for (unsigned phase = 0; phase < 8; ++phase) {
+      const unsigned beforeTick = scanning.transfers; shell.tick(); CHECK(scanning.transfers == beforeTick + 1);
+    }
+    CHECK(scanning.output.find("Scan complete: 8 probed, 6 ACK, 1 other transport errors") != std::string::npos);
+    scanning.output.clear(); shell.processCommand("health");
+    CHECK(scanning.output.substr(0, scanning.output.find('\n')) == health);
+    scanning.probeNackAddress = -1; scanning.probeErrorAddress = -1;
+    scanning.output.clear(); shell.processCommand("scan");
+    for (unsigned phase = 0; phase < 112; ++phase) {
+      const unsigned beforeTick = scanning.transfers; shell.tick(); CHECK(scanning.transfers == beforeTick + 1);
+    }
+    CHECK(scanning.output.find("Scan complete: 112 probed, 112 ACK, 0 other transport errors") != std::string::npos);
+    shell.processCommand("scan"); shell.tick(); shell.tick();
+    const unsigned beforeStop = scanning.transfers; shell.processCommand("cancel"); scanning.settle(shell);
+    CHECK(scanning.transfers == beforeStop);
+    scanning.output.clear(); shell.processCommand("result");
+    CHECK(scanning.output.find("Scan cancelled: 2 probed") != std::string::npos);
+    shell.processCommand("scan 1"); shell.processCommand("discover extra"); CHECK(scanning.transfers == beforeStop);
+  }
+  {
+    Fixture full; tmp1x2_cli::Cli shell;
+    auto cfg = full.config(); cfg.extendedMode = true; cfg.lowThresholdC = 150; cfg.highThresholdC = 200;
+    shell.setup(full.platform(), cfg); full.settle(shell); shell.processCommand("color off");
+    const uint16_t baselineConfig = full.regs[1], baselineLow = full.regs[2], baselineHigh = full.regs[3];
+    full.output.clear(); const unsigned beforeStart = full.transfers; shell.processCommand("selftest full");
+    CHECK(full.transfers == beforeStart);
+    for (unsigned i = 0; i < 3000; ++i) {
+      const unsigned beforeTick = full.transfers; ++full.timeMs; shell.tick(); CHECK(full.transfers - beforeTick <= 1);
+    }
+    CHECK(full.output.find("complete pass=19 fail=0 skip=0") != std::string::npos);
+    CHECK(full.output.find("Baseline restoration: verified") != std::string::npos);
+    CHECK((full.regs[1] & 0x1FD0U) == (baselineConfig & 0x1FD0U));
+    CHECK(full.regs[2] == baselineLow && full.regs[3] == baselineHigh);
+    full.output.clear(); shell.processCommand("settings");
+    CHECK(full.output.find("low=150.0000 C high=200.0000 C") != std::string::npos);
+    // A failed test case still restores and verifies the complete captured profile.
+    full.output.clear(); shell.processCommand("selftest full"); full.writeFailures = 1; full.settle(shell);
+    CHECK(full.output.find("complete pass=1 fail=1 skip=0") != std::string::npos);
+    CHECK(full.output.find("Baseline restoration: verified") != std::string::npos);
+    CHECK(full.regs[2] == baselineLow && full.regs[3] == baselineHigh);
+    // First cancel schedules asynchronous restoration without doing bus work itself.
+    full.output.clear(); shell.processCommand("selftest full"); shell.tick();
+    const unsigned initialWrites = full.writes;
+    for (unsigned i = 0; i < 20 && full.writes == initialWrites; ++i) { ++full.timeMs; shell.tick(); }
+    const unsigned beforeStop = full.transfers; shell.processCommand("stop"); CHECK(full.transfers == beforeStop);
+    full.settle(shell);
+    CHECK(full.output.find("Diagnostic summary: cancelled") != std::string::npos);
+    CHECK(full.output.find("Baseline restoration: verified") != std::string::npos);
+    // Failure before any restore write must still retain the original desired profile and dirty evidence.
+    full.output.clear(); shell.processCommand("selftest full"); shell.tick(); shell.processCommand("stop");
+    full.readFailures = 1; full.settle(shell);
+    CHECK(full.output.find("Baseline restoration: not verified") != std::string::npos);
+    full.output.clear(); shell.processCommand("settings"); shell.processCommand("health");
+    CHECK(full.output.find("low=150.0000 C high=200.0000 C") != std::string::npos);
+    CHECK(full.output.find("initialized=no dirty=yes") != std::string::npos);
+    shell.processCommand("begin"); full.settle(shell);
+    full.output.clear(); shell.processCommand("selftest full"); shell.tick(); shell.processCommand("stop");
+    const unsigned beforeSecondStop = full.transfers; shell.processCommand("stop"); full.settle(shell);
+    CHECK(full.transfers == beforeSecondStop);
+    CHECK(full.output.find("Baseline restoration: not verified") != std::string::npos);
+    full.output.clear(); shell.processCommand("health"); CHECK(full.output.find("initialized=no dirty=yes") != std::string::npos);
+    shell.processCommand("begin"); full.settle(shell); shell.processCommand("mode shutdown"); full.settle(shell);
+    shell.processCommand("start"); const unsigned beforeBusy = full.transfers;
+    full.output.clear(); shell.processCommand("selftest full"); full.settle(shell);
+    CHECK(full.transfers == beforeBusy);
+    CHECK(full.output.find("Consume the pending one-shot") != std::string::npos);
+    shell.processCommand("tryread");
+  }
+  {
+    Fixture field; tmp1x2_cli::Cli shell;
+    auto cfg = field.config(); cfg.offlineThreshold = 3;
+    shell.setup(field.platform(), cfg); field.settle(shell); shell.processCommand("color off");
+    field.output.clear(); shell.processCommand("tempf"); CHECK(field.output.find("77.0000 F") != std::string::npos);
+    unsigned initial = field.transfers;
+    field.output.clear(); shell.processCommand("freshness 100");
+    CHECK(field.output.find("timestamp=known age=0 ms max=100 ms usable=yes") != std::string::npos);
+    field.timeMs += 101; shell.processCommand("freshness 100");
+    CHECK(field.output.find("max=100 ms usable=no") != std::string::npos);
+    for (const char* command : {"mode", "rate", "extended", "alert", "polarity", "faults", "addr", "model", "settings values", "freshness -1", "freshness 1 extra"})
+      shell.processCommand(command);
+    CHECK(field.transfers == initial);
+    shell.processCommand("raw"); shell.processCommand("status_raw"); CHECK(field.transfers == initial + 2);
+    field.readFailures = 3; shell.processCommand("read"); shell.processCommand("read"); shell.processCommand("read");
+    initial = field.transfers; shell.processCommand("healthreset"); CHECK(field.transfers == initial);
+    field.output.clear(); shell.processCommand("health");
+    CHECK(field.output.find("state=OFFLINE online=no consec=3 ok=0 fail=0") != std::string::npos);
+    CHECK(field.output.find("I2C_ERROR") != std::string::npos);
+  }
+  {
+    Fixture callerClock; tmp1x2_cli::Cli shell;
+    auto cfg = callerClock.config(); cfg.nowMs = nullptr;
+    shell.setup(callerClock.platform(), cfg); callerClock.settle(shell); shell.processCommand("color off");
+    callerClock.timeMs = 5000; callerClock.output.clear(); shell.processCommand("read");
+    CHECK(callerClock.output.find("timestamp=5000 ms clock=known") != std::string::npos);
+    shell.processCommand("freshness 0");
+    CHECK(callerClock.output.find("age=0 ms max=0 ms usable=yes") != std::string::npos);
+    const unsigned beforeIdle = callerClock.transfers;
+    callerClock.settle(shell); CHECK(callerClock.transfers == beforeIdle);
+    shell.processCommand("mode shutdown"); callerClock.settle(shell); shell.processCommand("start");
+    const unsigned afterStart = callerClock.transfers; callerClock.timeMs += 100; shell.tick();
+    CHECK(callerClock.transfers == afterStart);
+    callerClock.output.clear(); shell.processCommand("tryread");
+    const auto timestamp = "timestamp=" + std::to_string(callerClock.timeMs) + " ms clock=known";
+    CHECK(callerClock.output.find(timestamp) != std::string::npos);
+  }
+  {
+    Fixture bus; tmp1x2_cli::Cli shell;
+    shell.setup(bus.platform(), bus.config()); bus.settle(shell); shell.processCommand("color off");
+    shell.processCommand("read"); bus.output.clear(); shell.processCommand("health");
+    auto health = bus.output.substr(0, bus.output.find('\n'));
+    unsigned initial = bus.transfers;
+    for (const char* command : {"reset", "reset device", "reset all extra", "busreset extra", "ara extra", "alertresponse extra"}) shell.processCommand(command);
+    CHECK(bus.transfers == initial && bus.busResets == 0);
+    bus.output.clear(); shell.processCommand("ara");
+    CHECK(bus.transfers == initial + 1 && bus.receives == 1 && bus.lastAddress == 0x0C);
+    CHECK(bus.output.find("raw=0x91 address=0x48 status-bit=1") != std::string::npos);
+    CHECK(bus.output.find("Cause for selected BOM model TMP102") != std::string::npos);
+    bus.output.clear(); bus.alertResponse = 0xA0; shell.processCommand("alertresponse");
+    CHECK(bus.output.find("raw=0xA0 address=0x50 status-bit=0") != std::string::npos);
+    CHECK(bus.output.find("Cause for selected BOM") == std::string::npos);
+    bus.failReceive = true; shell.processCommand("ara");
+    CHECK(bus.output.find("I2C_ERROR") != std::string::npos);
+    bus.output.clear(); shell.processCommand("health");
+    CHECK(bus.output.substr(0, bus.output.find('\n')) == health);
+    bus.output.clear(); initial = bus.transfers; shell.processCommand("busreset");
+    CHECK(bus.transfers == initial + 1 && bus.busResets == 1 && bus.lastAddress == 0);
+    CHECK(bus.output.find("ALL compatible devices") != std::string::npos);
+    bus.output.clear(); shell.processCommand("health");
+    CHECK(bus.output.substr(0, bus.output.find('\n')) == health);
+    CHECK(bus.output.find("dirty=yes") != std::string::npos);
+    bus.output.clear(); bus.alertResponse = 0x91; bus.failReceive = false; shell.processCommand("ara");
+    CHECK(bus.output.find("raw=0x91 address=0x48 status-bit=1") != std::string::npos);
+    CHECK(bus.output.find("Cause for selected BOM") == std::string::npos); // Cached polarity is untrusted after reset.
+    initial = bus.transfers; shell.processCommand("read"); CHECK(bus.transfers == initial);
+    bus.output.clear(); shell.processCommand("sample"); CHECK(bus.output.find("No cached CLI sample") != std::string::npos);
+    shell.processCommand("recover"); bus.settle(shell);
+    bus.output.clear(); shell.processCommand("health"); health = bus.output.substr(0, bus.output.find('\n'));
+    bus.writeFailures = 1; initial = bus.transfers; shell.processCommand("reset all");
+    CHECK(bus.transfers == initial + 1 && bus.busResets == 2);
+    bus.output.clear(); shell.processCommand("health");
+    CHECK(bus.output.substr(0, bus.output.find('\n')) == health);
+    CHECK(bus.output.find("dirty=yes") != std::string::npos);
+    initial = bus.transfers; shell.processCommand("read"); CHECK(bus.transfers == initial);
+    shell.processCommand("recover"); initial = bus.transfers; shell.processCommand("busreset"); shell.processCommand("ara");
+    CHECK(bus.transfers == initial); // Owner blocks all explicit bus operations.
+    shell.processCommand("cancel");
+  }
+  std::puts("CLI parsing, diagnostics, full configuration exercise/restoration, bus operations, field helpers and cooperative workflows passed");
   return 0;
 }

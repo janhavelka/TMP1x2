@@ -17,6 +17,14 @@ as the four-register protocol reference. See the full
 - Explicit TMP112D X2SON address-select support at 0x40..0x43, with model-specific
   address and physical ALERT capability checks.
 - Arduino ESP32-S2/S3 and native ESP-IDF examples sharing one diagnostic CLI.
+- Field helpers for initialization aliases, validated register settings, cached
+  sample age/provenance, health snapshots, readback and temperature units.
+- Explicit general-call reset and SMBus Alert Response bus helpers, separate from
+  device initialization and recovery.
+
+The [feature matrix](docs/feature-coverage.md) maps chip capabilities and sibling
+API conventions to implemented functions and test commands. See also
+[field helpers](docs/field-helpers.md) and [shared-bus operations](docs/bus-operations.md).
 
 ## Integration
 

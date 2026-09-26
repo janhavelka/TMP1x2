@@ -16,16 +16,17 @@
 #include "Tmp1x2Cli.h"
 
 namespace {
-constexpr uint8_t deviceAddresses[] = {0x40, 0x41, 0x42, 0x43, 0x48, 0x49, 0x4A, 0x4B};
+constexpr uint8_t deviceAddresses[] = {0x40, 0x41, 0x42, 0x43, 0x48, 0x49, 0x4A, 0x4B, 0x00, 0x0C};
+constexpr unsigned deviceCount = sizeof(deviceAddresses) / sizeof(deviceAddresses[0]);
 struct App {
   i2c_master_bus_handle_t bus = nullptr;
-  i2c_master_dev_handle_t devices[8]{};
+  i2c_master_dev_handle_t devices[deviceCount]{};
   tmp1x2_cli::TransferStats stats{};
   QueueHandle_t input = nullptr;
   tmp1x2_cli::Cli cli{};
 } app;
 i2c_master_dev_handle_t deviceHandle(uint8_t address) {
-  for (unsigned index = 0; index < 8; ++index)
+  for (unsigned index = 0; index < deviceCount; ++index)
     if (deviceAddresses[index] == address) return app.devices[index];
   return nullptr;
 }
@@ -57,6 +58,13 @@ TMP1x2::Status probe(uint8_t address, void*) {
   if (result == ESP_ERR_NOT_FOUND)
     return TMP1x2::Status::Error(TMP1x2::Err::I2C_NACK_ADDR, "address probe NACK", result);
   return mapError(result);
+}
+TMP1x2::Status receiveI2c(uint8_t address, uint8_t* rx, size_t length, uint32_t timeoutMs, void*) {
+  const auto device = deviceHandle(address);
+  if (address != 0x0C || !device || !rx || length != 1 || timeoutMs == 0 || timeoutMs > INT_MAX)
+    return TMP1x2::Status::Error(TMP1x2::Err::INVALID_PARAM, "invalid Alert Response receive");
+  // One receive-only transaction, ending in master NACK and STOP; no pointer write.
+  return finish(i2c_master_receive(device, rx, length, static_cast<int>(timeoutMs)));
 }
 uint32_t nowMs(void*) { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }
 void cooperativeYield(void*) { vTaskDelay(1); }
@@ -96,9 +104,9 @@ extern "C" void app_main() {
   bus.flags.enable_internal_pullup = true;
   esp_err_t error = i2c_new_master_bus(&bus, &app.bus);
   if (error != ESP_OK) { std::printf("[E] Bus creation failed: %s\n", esp_err_to_name(error)); return; }
-  // Fixed set of eight device handles makes runtime address changes allocation
-  // free. i2c_master_bus_add_device does not prove presence or touch the chip.
-  for (unsigned index = 0; index < 8; ++index) {
+  // Eight sensor handles plus explicit general-call/ARA handles keep runtime
+  // commands allocation-free. Creating handles does not access the bus.
+  for (unsigned index = 0; index < deviceCount; ++index) {
     i2c_device_config_t device{};
     device.dev_addr_length = I2C_ADDR_BIT_LEN_7;
     device.device_address = deviceAddresses[index];
@@ -135,6 +143,8 @@ extern "C" void app_main() {
   platform.probeAddress = probe;
   platform.transferStats = stats;
   platform.resetTransferStats = resetStats;
+  platform.busWrite = writeI2c;
+  platform.busReceive = receiveI2c;
   platform.framework = "native-esp-idf";
   platform.frameworkVersion = esp_get_idf_version();
   platform.target = CONFIG_IDF_TARGET;

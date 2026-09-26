@@ -34,6 +34,14 @@ bool boolean(const char* text, bool& out) {
 const char* modelName(TMP1x2::Model model) {
   return TMP1x2::toString(model);
 }
+const char* configCaseName(uint8_t phase) {
+  static const char* names[] = {"rate 0.25 Hz", "rate 1 Hz", "rate 4 Hz", "rate 8 Hz",
+    "continuous mode", "shutdown mode", "normal format", "extended format",
+    "comparator mode", "interrupt mode", "active-low polarity", "active-high polarity",
+    "fault queue 1", "fault queue 2", "fault queue 4", "fault queue 6",
+    "threshold window 0..50 C", "threshold window -10..30 C"};
+  return phase < 18 ? names[phase] : "baseline restoration";
+}
 }  // namespace
 
 const char* Cli::color(unsigned code) const {
@@ -104,12 +112,14 @@ void Cli::printHelp() {
   item("verbose [0|1] / quiet [0|1]", "Show or set per-sample watch/stress output");
   section("Data");
   item("read / temp", "Read latest register; freshness not guaranteed");
+  item("tempf", "Read latest temperature in Fahrenheit");
   item("measure / request", "Start cooperative sample operation");
   item("start / oneshot", "Trigger single conversion in shutdown mode");
   item("poll / ready", "Check one-shot completion");
   item("tryread", "Read pending one-shot when ready");
   item("readblocking [timeout_ms]", "Bounded one-shot convenience, 1..5000 ms");
   item("sample / sampleage", "Show cached CLI sample and age without I2C");
+  item("freshness [max_age_ms]", "Cached acquisition age and conversion provenance");
   item("watch [N] [interval_ms]", "Finite sampling, default 20 at 1000 ms");
   item("stop", "Stop sampling or cancel an operation; no I2C");
   item("job / job status", "Cached cooperative operation progress; no I2C");
@@ -122,6 +132,9 @@ void Cli::printHelp() {
   item("thdecode <raw16> [format]", "Decode a threshold in normal or extended format");
   section("Configuration");
   item("cfg / settings / snapshot", "Desired settings cached by CLI; no I2C");
+  item("settings read / settings live", "Cooperative live configuration/threshold checks");
+  item("settings values", "Show accepted configuration field values");
+  item("snapshot read", "Coherent CONFIG/TEMP/threshold register diagnostic");
   item("mode [cont|shutdown]", "Continuous conversion or low-power shutdown");
   item("rate [0.25|1|4|8]", "Conversion rate in Hz");
   item("extended [0|1|off|on]", "Select normal 12-bit or extended 13-bit format");
@@ -133,6 +146,7 @@ void Cli::printHelp() {
   item("verify", "Compare hardware configuration with driver cache");
   section("Registers");
   item("config / status", "Read and decode live configuration register");
+  item("status_raw / raw", "Tracked raw CONFIG / TEMP register word");
   item("dump", "Read all four registers; can clear interrupt ALERT");
   item("reg / rreg <0..3>", "Read one 16-bit register (MSB first)");
   item("wreg <1..3> <0..0xFFFF>", "Tracked register write; marks configuration dirty");
@@ -144,20 +158,26 @@ void Cli::printHelp() {
   item("diag", "Version, desired settings and cached health");
   item("probe", "Read device configuration without driver health effects");
   item("recover", "Cooperatively reapply desired configuration");
+  item("busreset / reset all", "General-call RESET of ALL compatible bus devices");
+  item("ara / alertresponse", "Acknowledge one SMBus ALERT response winner");
   item("stress [N]", "Finite cooperative samples, default 100; stop cancels");
   item("stress_mix [N]", "Finite probe/config/threshold/sample cycles; default 100");
-  item("selfcheck / selftest", "Bounded probe/configuration/sample diagnostic");
+  item("selfcheck / selftest", "Cooperative read-only PASS/FAIL/SKIP chip checks");
+  item("selftest full", "Mutate/test all settings, then restore captured profile");
   item("xfer_stats / counters", "Independent cached adapter transfer counters");
   item("xfer_reset", "Reset adapter counters while idle; preserves health");
-  print("\nRegister reads may acknowledge interrupt-mode ALERT. No automatic bus reset.\n");
+  item("healthreset", "Clear cumulative health totals while idle; retain state/error");
+  print("\nRegister reads and ARA can acknowledge interrupt ALERT. No automatic bus reset.\n");
+  print("Full-test stop/cancel starts baseline restoration; a second cancellation aborts restoration.\n");
 }
 void Cli::printSample(const TMP1x2::Sample& sample) {
   _lastSample = sample;
   _hasSample = true;
-  print("Temperature: %s%.4f C%s raw=0x%04X counts=%d extended=%s timestamp=%lu ms\n",
+  print("Temperature: %s%.4f C%s raw=0x%04X counts=%d extended=%s timestamp=%lu ms clock=%s one-shot=%s\n",
         color(32), static_cast<double>(sample.celsius), color(0), static_cast<unsigned>(sample.raw),
         static_cast<int>(sample.counts), sample.extendedMode ? "yes" : "no",
-        static_cast<unsigned long>(sample.timestampMs));
+        static_cast<unsigned long>(sample.timestampMs), sample.timestampValid ? "known" : "unknown",
+        sample.freshConversion ? "confirmed" : "unproven");
 }
 void Cli::printSettings() {
   print("Desired: model=%s address=0x%02X timeout=%lu ms mode=%s rate=%s extended=%s\n",
@@ -243,14 +263,15 @@ void Cli::recordRunResult(TMP1x2::Status result, const TMP1x2::Sample& sample, b
     if (_verbose) status(result);
   }
 }
-void Cli::startOperation(TMP1x2::OperationKind kind, const TMP1x2::Config* desired) {
+TMP1x2::Status Cli::startOperation(TMP1x2::OperationKind kind, const TMP1x2::Config* desired) {
   if (!_platform.nowMs && !_config.nowMs) {
-    status(TMP1x2::Status::Error(TMP1x2::Err::INVALID_CONFIG, "cooperative operations require a monotonic clock")); return;
+    const auto st = TMP1x2::Status::Error(TMP1x2::Err::INVALID_CONFIG, "cooperative operations require a monotonic clock");
+    status(st); return st;
   }
   TMP1x2::Status st{};
   if (kind == TMP1x2::OperationKind::INITIALIZE) {
     st = _device.bind(_config);
-    if (!st.ok()) { status(st); return; }
+    if (!st.ok()) { status(st); return st; }
     _config = _device.getConfig();
     st = _device.startInitialize(now(), 1000, _operationToken);
   } else if (kind == TMP1x2::OperationKind::CONFIGURE && desired) {
@@ -268,6 +289,7 @@ void Cli::startOperation(TMP1x2::OperationKind kind, const TMP1x2::Config* desir
           static_cast<unsigned long>(_operationToken), TMP1x2::toString(kind));
   }
   status(st);
+  return st;
 }
 void Cli::finishOperation() {
   if (!_device.resultPending()) return;
@@ -278,10 +300,18 @@ void Cli::finishOperation() {
   if (_device.isBound()) _config = _device.getConfig();
   _oneShot = _device.conversionStarted();
   if (result.hasSample) { _lastSample = result.sample; _hasSample = true; }
+  if (_diagnostic.active && _diagnostic.kind == DiagnosticKind::CONFIGTEST) {
+    finishConfigTestOperation(result); return;
+  }
+  _lastResultDiagnostic = false;
   printOperationResult();
   printPrompt();
 }
 void Cli::printOperation() {
+  if (_diagnostic.active) {
+    printDiagnostic();
+    if (!_device.operationActive()) return;
+  }
   const auto operation = _device.getOperationSnapshot();
   print("Operation: active=%s token=%lu kind=%s status=%s waiting=%s next=%lu ms timeout=%lu ms write-attempted=%s\n",
         operation.active ? "yes" : "no", static_cast<unsigned long>(operation.token), TMP1x2::toString(operation.kind),
@@ -295,6 +325,7 @@ void Cli::printOperation() {
           static_cast<double>(operation.desiredConfig.highThresholdC));
 }
 void Cli::printOperationResult() {
+  if (_lastResultDiagnostic) { printDiagnosticResult(); return; }
   if (!_hasOperationResult) { print("No completed operation result.\n"); return; }
   print("Operation result: token=%lu kind=%s elapsed=%lu ms write-attempted=%s\n",
         static_cast<unsigned long>(_lastOperation.token), TMP1x2::toString(_lastOperation.kind),
@@ -304,6 +335,238 @@ void Cli::printOperationResult() {
   if (_lastOperation.hasSample)
     print("Result sample: %.4f C raw=0x%04X timestamp=%lu ms\n", static_cast<double>(_lastOperation.sample.celsius),
           static_cast<unsigned>(_lastOperation.sample.raw), static_cast<unsigned long>(_lastOperation.sample.timestampMs));
+}
+bool Cli::activeWork() const { return _watch || _diagnostic.active || _device.operationActive(); }
+void Cli::startDiagnostic(DiagnosticKind kind) {
+  if (activeWork()) { print("Stop active work before starting another diagnostic.\n"); return; }
+  if ((kind == DiagnosticKind::SCAN || kind == DiagnosticKind::DISCOVER) && !_platform.probeAddress) {
+    print("No scan adapter.\n"); return;
+  }
+  if (kind == DiagnosticKind::CONFIGTEST && !_device.isInitialized()) {
+    status(TMP1x2::Status::Error(TMP1x2::Err::NOT_INITIALIZED, "Initialize before the full configuration test")); return;
+  }
+  if (kind == DiagnosticKind::CONFIGTEST && _device.conversionStarted()) {
+    status(TMP1x2::Status::Error(TMP1x2::Err::BUSY, "Consume the pending one-shot before the full configuration test")); return;
+  }
+  _diagnostic = Diagnostic{};
+  _diagnostic.kind = kind; _diagnostic.active = true; _diagnostic.available = true;
+  _diagnostic.startedMs = now(); _diagnostic.baseline = _config;
+  _diagnostic.nextAddress = kind == DiagnosticKind::SCAN ? 0x08 : 0x40;
+  if (kind == DiagnosticKind::CONFIGTEST) {
+    _hasSample = false;
+    print("Full configuration test: 18 verified cases; CHANGES mode, rate, EM, thermostat, polarity, fault queue and thresholds.\n");
+    print("Cases use representable threshold windows; final restoration reinstates the captured desired profile.\n");
+    print("First stop/cancel requests restoration; a second stops restoration and leaves reinitialization required.\n");
+  } else if (kind == DiagnosticKind::SELFCHECK) {
+    print("Selfcheck: read-only binding/configuration/threshold/temperature/GPIO checks; reads can acknowledge interrupt ALERT.\n");
+  } else if (kind == DiagnosticKind::SETTINGS || kind == DiagnosticKind::SNAPSHOT) {
+    print("Reading live configuration and thresholds cooperatively; no configuration writes.\n");
+  } else print("Cooperative %s started; one address per tick, stop cancels. ACK does not identify a chip.\n",
+               kind == DiagnosticKind::SCAN ? "scan" : "discovery");
+}
+void Cli::diagnosticCheck(const char* label, TMP1x2::Status result, const char* skip) {
+  ++_diagnostic.checked;
+  if (skip) {
+    ++_diagnostic.skipped;
+    print("  %s[SKIP]%s %s: %s\n", color(33), color(0), label, skip);
+  } else if (result.ok()) {
+    ++_diagnostic.passed;
+    print("  %s[PASS]%s %s\n", color(32), color(0), label);
+  } else {
+    ++_diagnostic.failures; _diagnostic.lastError = result;
+    print("  %s[FAIL]%s %s: %s detail=%ld%s%s\n", color(31), color(0), label,
+          TMP1x2::errorName(result.code), static_cast<long>(result.detail),
+          result.msg && *result.msg ? ": " : "", result.msg ? result.msg : "");
+  }
+}
+void Cli::printDiagnostic(bool last) {
+  const auto& diagnostic = last ? _lastDiagnostic : _diagnostic;
+  const char* name = diagnostic.kind == DiagnosticKind::SCAN ? "scan" :
+      diagnostic.kind == DiagnosticKind::DISCOVER ? "discover" :
+      diagnostic.kind == DiagnosticKind::SELFCHECK ? "selfcheck" :
+      diagnostic.kind == DiagnosticKind::SETTINGS ? "settings read" :
+      diagnostic.kind == DiagnosticKind::SNAPSHOT ? "snapshot read" : "selftest full";
+  print("Diagnostic: %s active=%s phase=%u checked=%lu elapsed=%lu ms restoring=%s\n", name,
+        diagnostic.active ? "yes" : "no", static_cast<unsigned>(diagnostic.phase),
+        static_cast<unsigned long>(diagnostic.checked),
+        static_cast<unsigned long>((diagnostic.active ? now() : diagnostic.endedMs) - diagnostic.startedMs),
+        diagnostic.restoring ? "yes" : "no");
+}
+void Cli::printDiagnosticResult() {
+  const auto& diagnostic = _lastDiagnostic;
+  if (!diagnostic.available) { print("No diagnostic result.\n"); return; }
+  printDiagnostic(true);
+  if (diagnostic.kind == DiagnosticKind::SCAN || diagnostic.kind == DiagnosticKind::DISCOVER) {
+    print("Scan %s: %lu probed, %lu ACK, %lu other transport errors.\n",
+          diagnostic.cancelled ? "cancelled" : diagnostic.active ? "active" : "complete",
+          static_cast<unsigned long>(diagnostic.checked), static_cast<unsigned long>(diagnostic.found),
+          static_cast<unsigned long>(diagnostic.failures));
+  } else {
+    print("Diagnostic summary: %s pass=%lu fail=%lu skip=%lu\n",
+          diagnostic.cancelled ? "cancelled" : diagnostic.active ? "active" : "complete",
+          static_cast<unsigned long>(diagnostic.passed), static_cast<unsigned long>(diagnostic.failures),
+          static_cast<unsigned long>(diagnostic.skipped));
+    if (diagnostic.kind == DiagnosticKind::CONFIGTEST) {
+      print("Baseline restoration: %s\n", diagnostic.restoreComplete ? "verified" : "not verified; run begin to retry the captured profile");
+      if (!diagnostic.restoreStatus.ok()) status(diagnostic.restoreStatus);
+    }
+  }
+  if (diagnostic.failures) { print("Last diagnostic failure: "); status(diagnostic.lastError); }
+}
+void Cli::finishDiagnostic(bool cancelled) {
+  _diagnostic.active = false; _diagnostic.cancelled = _diagnostic.cancelled || cancelled;
+  _diagnostic.endedMs = now(); _lastResultDiagnostic = true;
+  _lastDiagnostic = _diagnostic;
+  printDiagnosticResult(); printPrompt();
+}
+void Cli::restoreProfile() {
+  _diagnostic.restoring = true;
+  const auto st = startOperation(TMP1x2::OperationKind::CONFIGURE, &_diagnostic.baseline);
+  if (!st.inProgress()) {
+    TMP1x2::OperationResult result{}; result.status = st;
+    finishConfigTestOperation(result);
+  }
+}
+void Cli::finishConfigTestOperation(const TMP1x2::OperationResult& result) {
+  if (_diagnostic.restoring) {
+    _diagnostic.restoreStatus = result.status; _diagnostic.restoreComplete = result.status.ok();
+    diagnosticCheck("restore captured profile", result.status);
+    if (!result.status.ok()) {
+      // A failure before the first restore write leaves the preceding test case
+      // cached by the core. Rebind locally so explicit recovery uses baseline.
+      _config = _diagnostic.baseline;
+      const auto binding = _device.bind(_config);
+      if (!binding.ok()) status(binding);
+      else {
+        status(_device.invalidateDeviceState());
+        print("Captured profile rebound without I2C; dirty evidence retained, driver health starts a new session.\n");
+      }
+    }
+    finishDiagnostic(); return;
+  }
+  diagnosticCheck(configCaseName(_diagnostic.phase), result.status);
+  if (!result.status.ok()) { restoreProfile(); return; }
+  ++_diagnostic.phase;
+}
+void Cli::cancelWork() {
+  if (_diagnostic.active) {
+    if (_diagnostic.kind != DiagnosticKind::CONFIGTEST) { finishDiagnostic(true); return; }
+    _diagnostic.cancelled = true;
+    const bool stoppingRestore = _diagnostic.restoring;
+    if (_device.operationActive()) {
+      (void)_device.cancel();
+      TMP1x2::OperationResult result{};
+      if (_device.takeResult(_operationToken, result).ok()) {
+        _lastOperation = result; _hasOperationResult = true;
+      }
+    }
+    if (stoppingRestore) {
+      _diagnostic.restoreStatus = TMP1x2::Status::Error(TMP1x2::Err::CANCELLED, "Restoration cancelled by user");
+      _config = _diagnostic.baseline; const auto st = _device.bind(_config); status(st);
+      if (st.ok()) {
+        status(_device.invalidateDeviceState());
+        print("Restoration stopped; baseline rebound without I2C, dirty evidence retained, health starts a new session.\n");
+      }
+      finishDiagnostic(true);
+    } else {
+      print("Configuration test cancelled; scheduling restoration of the captured profile.\n");
+      restoreProfile();
+    }
+    return;
+  }
+  if (_device.operationActive()) { status(_device.cancel()); finishOperation(); return; }
+  stop();
+}
+void Cli::tickDiagnostic() {
+  if (_diagnostic.kind == DiagnosticKind::SCAN || _diagnostic.kind == DiagnosticKind::DISCOVER) {
+    const uint8_t address = _diagnostic.nextAddress;
+    const auto st = _platform.probeAddress(address, _platform.user);
+    ++_diagnostic.checked;
+    if (st.ok()) {
+      ++_diagnostic.found;
+      print("  Found 0x%02X%s\n", address,
+            address >= 0x40 && address <= 0x43 ? " (TMP112D ADD0-compatible; identity unverified)" :
+            address >= 0x48 && address <= 0x4B ? " (TMP102/TMP112-compatible; identity unverified)" : "");
+    } else if (!st.is(TMP1x2::Err::I2C_NACK_ADDR) && !st.is(TMP1x2::Err::DEVICE_NOT_FOUND)) {
+      ++_diagnostic.failures; _diagnostic.lastError = st;
+    }
+    ++_diagnostic.nextAddress;
+    if (_diagnostic.kind == DiagnosticKind::DISCOVER && _diagnostic.nextAddress == 0x44) _diagnostic.nextAddress = 0x48;
+    if (_diagnostic.nextAddress > (_diagnostic.kind == DiagnosticKind::SCAN ? 0x77 : 0x4B)) finishDiagnostic();
+    return;
+  }
+  if (_diagnostic.kind == DiagnosticKind::CONFIGTEST) {
+    if (_diagnostic.phase == 18) { restoreProfile(); return; }
+    auto desired = _diagnostic.baseline;
+    // Every case remains representable when the baseline uses extended-only thresholds.
+    desired.lowThresholdC = 20; desired.highThresholdC = 30;
+    const unsigned phase = _diagnostic.phase;
+    if (phase < 4) desired.conversionRate = static_cast<TMP1x2::ConversionRate>(phase);
+    else if (phase < 6) desired.mode = static_cast<TMP1x2::Mode>(phase - 4);
+    else if (phase < 8) desired.extendedMode = phase == 7;
+    else if (phase < 10) desired.alertMode = static_cast<TMP1x2::AlertMode>(phase - 8);
+    else if (phase < 12) desired.alertPolarity = static_cast<TMP1x2::AlertPolarity>(phase - 10);
+    else if (phase < 16) desired.faultQueue = static_cast<TMP1x2::FaultQueue>(phase - 12);
+    else if (phase == 16) { desired.lowThresholdC = 0; desired.highThresholdC = 50; }
+    else { desired.lowThresholdC = -10; desired.highThresholdC = 30; }
+    const auto st = startOperation(TMP1x2::OperationKind::CONFIGURE, &desired);
+    if (!st.inProgress()) {
+      TMP1x2::OperationResult result{}; result.status = st; finishConfigTestOperation(result);
+    }
+    return;
+  }
+  const bool settings = _diagnostic.kind == DiagnosticKind::SETTINGS;
+  const uint8_t phase = _diagnostic.kind == DiagnosticKind::SNAPSHOT ? 8 :
+      settings ? static_cast<uint8_t>(_diagnostic.phase + 3) : _diagnostic.phase;
+  TMP1x2::Status st{};
+  if (phase == 0) {
+    diagnosticCheck("transport binding", _device.isBound() ? st : TMP1x2::Status::Error(TMP1x2::Err::NOT_BOUND, "No transport binding"));
+  } else if (phase == 1) {
+    diagnosticCheck("initialized driver", _device.isInitialized() ? st : TMP1x2::Status::Error(TMP1x2::Err::NOT_INITIALIZED, "Run begin first"));
+  } else if (phase == 2) {
+    if (!_device.isBound()) diagnosticCheck("presence/configuration plausibility", st, "transport unbound");
+    else diagnosticCheck("presence/configuration plausibility", _device.probe());
+  } else if (!_device.isInitialized()) {
+    diagnosticCheck(phase == 3 ? "live configuration" : phase == 4 ? "desired readback verification" :
+                    phase == 5 ? "thresholds" : phase == 6 ? "temperature register" :
+                    phase == 7 ? "physical ALERT GPIO" : "coherent register snapshot", st, "driver uninitialized");
+  } else if (phase == 3) {
+    TMP1x2::ConfigurationInfo info{}; st = _device.readConfiguration(info);
+    diagnosticCheck("live configuration fixed bits", st);
+    if (st.ok()) print("  CONFIG=0x%04X mode=%s rate=%s EM=%u thermostat=%s polarity=%s faults=%s AL=%u active=%u\n",
+                       static_cast<unsigned>(info.raw), TMP1x2::toString(info.mode), TMP1x2::toString(info.conversionRate),
+                       info.extendedMode ? 1U : 0U, TMP1x2::toString(info.alertMode), TMP1x2::toString(info.alertPolarity),
+                       TMP1x2::toString(info.faultQueue), info.alert ? 1U : 0U, info.alertActive ? 1U : 0U);
+  } else if (phase == 4) {
+    diagnosticCheck("desired configuration and threshold readback", _device.verifyConfiguration());
+  } else if (phase == 5) {
+    float low = 0, high = 0; st = _device.readThresholds(low, high);
+    if (st.ok() && low > high) st = TMP1x2::Status::Error(TMP1x2::Err::CONFIG_MISMATCH, "Threshold ordering invalid");
+    diagnosticCheck("decoded thresholds and ordering", st);
+    if (st.ok()) print("  Hardware thresholds: low=%.4f C high=%.4f C\n", static_cast<double>(low), static_cast<double>(high));
+  } else if (phase == 6) {
+    TMP1x2::Sample sample{}; st = _device.readSample(sample);
+    diagnosticCheck("temperature register format", st);
+    if (st.ok()) { printSample(sample); print("  Latest-register check does not prove a fresh conversion, especially in shutdown.\n"); }
+  } else if (phase == 7) {
+    if (!TMP1x2::hasAlertOutput(_config.model)) diagnosticCheck("physical ALERT GPIO", st, "model has ADD0 instead of ALERT");
+    else if (!_config.gpioRead || _config.alertPin < 0) diagnosticCheck("physical ALERT GPIO", st, "optional GPIO not configured");
+    else {
+      bool active = false; st = _device.readAlertPin(active); diagnosticCheck("physical ALERT GPIO", st);
+      if (st.ok()) print("  ALERT=%s pin=%d; no I2C\n", active ? "active" : "inactive", _config.alertPin);
+    }
+  } else {
+    TMP1x2::RegisterSnapshot snapshot{}; st = _device.readSnapshot(snapshot);
+    diagnosticCheck("coherent register snapshot", st);
+    if (st.ok())
+      print("  Snapshot: CONFIG=0x%04X TEMP=0x%04X TLOW=0x%04X THIGH=0x%04X config-match=%s thresholds-match=%s temperature-trusted=%s\n",
+            static_cast<unsigned>(snapshot.configuration.raw), static_cast<unsigned>(snapshot.rawTemperature),
+            static_cast<unsigned>(snapshot.rawLowThreshold), static_cast<unsigned>(snapshot.rawHighThreshold),
+            snapshot.configurationMatchesDesired ? "yes" : "no", snapshot.thresholdsMatchDesired ? "yes" : "no",
+            snapshot.temperatureTrusted ? "yes" : "no");
+  }
+  ++_diagnostic.phase;
+  if (_diagnostic.phase == (_diagnostic.kind == DiagnosticKind::SNAPSHOT ? 1 : settings ? 3 : 9)) finishDiagnostic();
 }
 void Cli::printHealth() {
   const auto state = _device.state();
@@ -372,6 +635,8 @@ void Cli::feed(char value) {
   }
 }
 void Cli::processCommand(const char* text) {
+  // Refresh caller-owned time without polling a retained manual conversion.
+  if (_platform.nowMs && !_device.operationActive()) (void)_device.poll(now(), 0);
   char buffer[160];
   if (std::strlen(text) >= sizeof(buffer)) { status(TMP1x2::Status::Error(TMP1x2::Err::INVALID_PARAM, "line too long")); return; }
   std::strcpy(buffer, text);
@@ -412,19 +677,24 @@ void Cli::processCommand(const char* text) {
   }
   if ((equals(command, "xfer_stats") || equals(command, "counters")) && count == 1) { printTransferStats(); return; }
   if (equals(command, "xfer_reset") && count == 1) {
-    if (_watch || _device.operationActive()) { print("Stop active work before resetting adapter counters.\n"); return; }
+    if (activeWork()) { print("Stop active work before resetting adapter counters.\n"); return; }
     if (!_platform.resetTransferStats) { print("No adapter counter-reset callback.\n"); return; }
     _platform.resetTransferStats(_platform.user);
     print("Adapter counters reset; driver health retained.\n"); return;
   }
+  if (equals(command, "healthreset") && count == 1) {
+    if (activeWork()) { print("Stop active work before resetting health totals.\n"); return; }
+    _device.resetStatistics();
+    print("Cumulative driver totals reset; online state, consecutive failures, error and timestamps retained.\n"); return;
+  }
   if (equals(command, "job")) {
     if (count == 1 || (count == 2 && equals(args[1], "status"))) { printOperation(); return; }
     if (count == 2 && equals(args[1], "result")) { printOperationResult(); return; }
-    if (count == 2 && equals(args[1], "cancel")) { status(_device.cancel()); finishOperation(); return; }
+    if (count == 2 && equals(args[1], "cancel")) { cancelWork(); return; }
     invalid(); return;
   }
   if (equals(command, "result") && count == 1) { printOperationResult(); return; }
-  if (equals(command, "cancel") && count == 1) { status(_device.cancel()); finishOperation(); return; }
+  if (equals(command, "cancel") && count == 1) { cancelWork(); return; }
   if (equals(command, "timing") && count == 1) { printTiming(); return; }
   if (equals(command, "convert")) {
     uint32_t raw = 0;
@@ -459,38 +729,49 @@ void Cli::processCommand(const char* text) {
     return;
   }
   if ((equals(command, "scan") || equals(command, "discover")) && count == 1) {
-    if (_watch || _device.operationActive()) { print("Stop active work before scanning.\n"); return; }
-    if (!_platform.probeAddress) { print("No scan adapter.\n"); return; }
-    const uint8_t first = equals(command, "scan") ? 0x08 : 0x40;
-    const uint8_t last = equals(command, "scan") ? 0x77 : 0x4B;
-    unsigned found = 0;
-    unsigned otherErrors = 0;
-    for (uint8_t address = first; address <= last; ++address) {
-      if (equals(command, "discover") && address >= 0x44 && address <= 0x47) continue;
-      const auto st = _platform.probeAddress(address, _platform.user);
-      if (st.ok()) {
-        ++found;
-        print("  Found 0x%02X%s\n", address,
-              address >= 0x40 && address <= 0x43 ? " (TMP112D ADD0-compatible; identity unverified)" :
-              address >= 0x48 && address <= 0x4B ? " (TMP102/TMP112-compatible; identity unverified)" : "");
-      }
-      else if (!st.is(TMP1x2::Err::I2C_NACK_ADDR) && !st.is(TMP1x2::Err::DEVICE_NOT_FOUND)) ++otherErrors;
-    }
-    print("Scan complete: %u ACK, %u other transport errors.\n", found, otherErrors); return;
+    startDiagnostic(equals(command, "scan") ? DiagnosticKind::SCAN : DiagnosticKind::DISCOVER); return;
   }
-  if (equals(command, "stop") && count == 1) {
-    if (_device.operationActive()) { status(_device.cancel()); finishOperation(); }
-    else stop();
-    return;
-  }
+  if (equals(command, "stop") && count == 1) { cancelWork(); return; }
   if ((equals(command, "drv") || equals(command, "health") || equals(command, "state") || equals(command, "online")) && count == 1) { printHealth(); return; }
   if ((equals(command, "cfg") || equals(command, "settings") || equals(command, "snapshot")) && count == 1) { printSettings(); return; }
+  if (equals(command, "settings") && count == 2 && equals(args[1], "values")) {
+    print("mode: cont|shutdown; rate: 0.25|1|4|8; extended: 0|1|off|on\n");
+    print("alert: comparator|interrupt; polarity: low|high; faults: 1|2|4|6\n");
+    print("threshold: low_C high_C, low <= high, rounded to 0.0625 C; normal [-128,127.9375], extended [-256,255.9375].\n"); return;
+  }
+  if (equals(command, "settings") && count == 2 && (equals(args[1], "read") || equals(args[1], "live"))) {
+    startDiagnostic(DiagnosticKind::SETTINGS); return;
+  }
+  if (equals(command, "snapshot") && count == 2 && equals(args[1], "read")) { startDiagnostic(DiagnosticKind::SNAPSHOT); return; }
   if (equals(command, "diag") && count == 1) { printVersion(); printSettings(); printHealth(); printOperation(); printRunStats(); return; }
   if ((equals(command, "sample") || equals(command, "sampleage")) && count == 1) {
     if (!_hasSample) print("No cached CLI sample.\n");
-    else { printSample(_lastSample); print("Age: %lu ms\n", static_cast<unsigned long>(now() - _lastSample.timestampMs)); }
+    else {
+      printSample(_lastSample);
+      if (_lastSample.timestampValid && (_platform.nowMs || _config.nowMs))
+        print("Age: %lu ms\n", static_cast<unsigned long>(now() - _lastSample.timestampMs));
+      else print("Age: unknown (no acquisition clock).\n");
+    }
     return;
   }
+  if (equals(command, "freshness")) {
+    uint32_t limit = 1000;
+    if (count > 2 || (count == 2 && !integer(args[1], 0, INT32_MAX, limit))) { invalid(); return; }
+    if (!_hasSample) { print("No cached CLI sample.\n"); return; }
+    if (!_lastSample.timestampValid || (!_platform.nowMs && !_config.nowMs)) {
+      print("Acquisition: timestamp=unknown age=unknown max=%lu ms usable=no; fresh-conversion=%s\n",
+            static_cast<unsigned long>(limit), _lastSample.freshConversion ? "confirmed one-shot" : "unproven (latest register)"); return;
+    }
+    print("Acquisition: timestamp=%s age=%lu ms max=%lu ms usable=%s; fresh-conversion=%s\n",
+          _lastSample.timestampValid ? "known" : "unknown", static_cast<unsigned long>(now() - _lastSample.timestampMs),
+          static_cast<unsigned long>(limit), _device.sampleFresh(now(), limit) ? "yes" : "no",
+          _lastSample.freshConversion ? "confirmed one-shot" : "unproven (latest register)"); return;
+  }
+  if (count == 1 && (equals(command, "mode") || equals(command, "rate") || equals(command, "extended") ||
+      equals(command, "alert") || equals(command, "polarity") || equals(command, "faults") || equals(command, "addr") || equals(command, "model"))) {
+    printSettings(); return;
+  }
+  if (_diagnostic.active) { print("Diagnostic active; use job, result, or cancel before other hardware commands.\n"); return; }
   if (_watch) { print("Watch active; use stop before other hardware commands.\n"); return; }
   if (_device.operationActive()) { print("Operation active; use job, result, or cancel before other hardware commands.\n"); return; }
   if ((equals(command, "begin") || equals(command, "init")) && count == 1) {
@@ -511,11 +792,43 @@ void Cli::processCommand(const char* text) {
   if ((equals(command, "measure") || equals(command, "request")) && count == 1) { startOperation(TMP1x2::OperationKind::READ); return; }
   if (equals(command, "probe") && count == 1) { status(_device.probe()); return; }
   if (equals(command, "verify") && count == 1) { status(_device.verifyConfiguration()); return; }
-  if ((equals(command, "selfcheck") || equals(command, "selftest")) && count == 1) {
-    auto st = _device.probe(); status(st);
-    if (st.ok()) { st = _device.verifyConfiguration(); status(st); }
-    if (st.ok()) { TMP1x2::Sample sample{}; st = _device.readSample(sample); status(st); if (st.ok()) printSample(sample); }
-    printHealth(); return;
+  if (equals(command, "selfcheck") || equals(command, "selftest")) {
+    if (count == 1) startDiagnostic(DiagnosticKind::SELFCHECK);
+    else if (equals(command, "selftest") && count == 2 && equals(args[1], "full")) startDiagnostic(DiagnosticKind::CONFIGTEST);
+    else invalid();
+    return;
+  }
+  if (equals(command, "reset") && count == 1) {
+    print("No per-device reset exists. Use busreset or reset all to reset ALL compatible devices on the bus.\n"); return;
+  }
+  if ((equals(command, "busreset") && count == 1) ||
+      (equals(command, "reset") && count == 2 && equals(args[1], "all"))) {
+    if (!_platform.busWrite) { print("No general-call write adapter.\n"); return; }
+    if (_device.isBound()) {
+      const auto st = _device.invalidateDeviceState();
+      if (!st.ok()) { status(st); return; }
+    }
+    _hasSample = false; _oneShot = false; _hasOperationResult = false;
+    print("General-call RESET: ALL compatible devices on this bus may reset. Reinitialize every affected driver, including after an error.\n");
+    status(TMP1x2::BusOperations::generalCallReset(_platform.busWrite, _platform.user, _config.i2cTimeoutMs));
+    print("Local configuration remains invalid until explicit begin/recover completes.\n"); return;
+  }
+  if ((equals(command, "ara") || equals(command, "alertresponse")) && count == 1) {
+    TMP1x2::BusOperations::AlertResponse response{};
+    print("ARA acknowledges one alerting device; even a failed response can clear its hardware alert.\n");
+    const auto st = TMP1x2::BusOperations::readAlertResponse(_platform.busReceive, _platform.user, _config.i2cTimeoutMs, response);
+    if (!st.ok()) status(st);
+    else {
+      print("Alert response: raw=0x%02X address=0x%02X status-bit=%u (identity unverified; model-specific meaning)\n",
+            response.raw, response.address, response.alertStatusBit ? 1U : 0U);
+      if (response.address == _config.i2cAddress && _device.isInitialized() && !_device.hardwareConfigDirty()) {
+        TMP1x2::BusOperations::AlertCause cause{};
+        if (TMP1x2::BusOperations::decodeAlertCause(response, _config.model, _config.alertPolarity, cause).ok())
+          print("  Cause for selected BOM model %s and cached polarity: %s\n", TMP1x2::toString(_config.model),
+                TMP1x2::BusOperations::toString(cause));
+      }
+    }
+    return;
   }
   if (equals(command, "addr") || equals(command, "model")) {
     if (count == 1) { printSettings(); return; }
@@ -543,13 +856,19 @@ void Cli::processCommand(const char* text) {
     _oneShot = false; _hasSample = false;
     printSettings(); print("Run begin to apply.\n"); return;
   }
-  if ((equals(command, "read") || equals(command, "temp") || equals(command, "tryread") || equals(command, "readblocking")) && count <= 2) {
+  if ((equals(command, "read") || equals(command, "temp") || equals(command, "tempf") || equals(command, "tryread") || equals(command, "readblocking")) && count <= 2) {
     uint32_t timeout = 500;
     if ((count == 2 && !equals(command, "readblocking")) || (count == 2 && !integer(args[1], 1, 5000, timeout))) { invalid(); return; }
     TMP1x2::Sample sample{};
     auto st = equals(command, "tryread") ? _device.tryRead(sample) : equals(command, "readblocking") ? _device.readBlocking(sample, timeout) : _device.readSample(sample);
     _oneShot = _device.conversionStarted();
-    if (st.ok()) printSample(sample); else status(st);
+    if (st.ok()) {
+      if (equals(command, "tempf")) {
+        _lastSample = sample; _hasSample = true;
+        print("Temperature: %.4f F raw=0x%04X (latest register)\n",
+              static_cast<double>(TMP1x2::TMP1x2::celsiusToFahrenheit(sample.celsius)), static_cast<unsigned>(sample.raw));
+      } else printSample(sample);
+    } else status(st);
     return;
   }
   if ((equals(command, "start") || equals(command, "oneshot")) && count == 1) { const auto st = _device.startOneShot(); _oneShot = _device.conversionStarted(); _conversionDeadlineMs = now() + 500; status(st); return; }
@@ -600,7 +919,7 @@ void Cli::processCommand(const char* text) {
     }
     return;
   }
-  if (equals(command, "config") || equals(command, "status") || equals(command, "dump") || equals(command, "reg") || equals(command, "rreg") || equals(command, "wreg")) {
+  if (equals(command, "config") || equals(command, "status") || equals(command, "status_raw") || equals(command, "raw") || equals(command, "dump") || equals(command, "reg") || equals(command, "rreg") || equals(command, "wreg")) {
     if ((equals(command, "config") || equals(command, "status")) && count == 1) {
       TMP1x2::ConfigurationInfo info{};
       const auto st = _device.readConfiguration(info);
@@ -613,7 +932,7 @@ void Cli::processCommand(const char* text) {
             TMP1x2::toString(info.alertMode), TMP1x2::toString(info.alertPolarity), TMP1x2::toString(info.faultQueue));
       return;
     }
-    uint32_t reg = 1;
+    uint32_t reg = equals(command, "raw") ? 0U : 1U;
     uint32_t value = 0;
     if (equals(command, "dump") && count == 1) {
       for (uint8_t address = 0; address < 4; ++address) { uint16_t raw = 0; const auto st = _device.readRegister(address, raw); if (!st.ok()) { status(st); break; } print("0x%02X = 0x%04X\n", address, raw); }
@@ -729,6 +1048,8 @@ void Cli::tick() {
     finishOperation();
     return;
   }
+  if (_platform.nowMs) (void)_device.poll(nowMs, 0);
+  if (_diagnostic.active) { tickDiagnostic(); return; }
   // Only an active watch drives transfers automatically. A stopped/timed-out
   // watch or a manual one-shot stays pending until an explicit command joins it.
   if (!_watch || static_cast<int32_t>(nowMs - _nextMs) < 0) return;

@@ -31,8 +31,8 @@ static constexpr uint16_t MASK_RESERVED = 0x000F;
 static constexpr uint16_t MASK_TEMP_EXTENDED = 0x0001;
 /// Conservative bound covering older 35-ms silicon and newer 15-ms devices.
 static constexpr uint32_t CONVERSION_TIME_MAX_MS = 35;
-/// General-call reset is deliberately NOT exposed by the driver: it resets
-/// every compatible device on the application-owned bus.
+/// Explicit shared-bus operations live in BusOperations.h. General-call reset
+/// affects every compatible device; initialization/recovery never send it.
 static constexpr uint8_t GENERAL_CALL_ADDRESS = 0x00;
 static constexpr uint8_t GENERAL_CALL_RESET = 0x06;
 static constexpr uint8_t SMBUS_ALERT_RESPONSE_ADDRESS = 0x0C;

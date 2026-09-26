@@ -31,5 +31,21 @@ They do not establish physical accuracy, bus timing or ALERT pin behavior.
 10. Run finite `stress` and `stress_mix` with verbose and quiet output, inject a
     disconnect, and compare run summaries with `health` and `xfer_stats`. Confirm
     `stop` produces no later background I2C and `xfer_reset` preserves health.
+11. Capture `settings` and `snapshot read`, then run `selfcheck` and
+    `selftest full`. Verify all 18 configuration cases and final restoration.
+    Cancel during EM settling, and disconnect during restoration. Confirm the
+    terminal report distinguishes a verified restore from a retained desired
+    baseline that still needs recovery. Repeat with extended-only baseline limits.
+12. On a bus whose affected targets are all under test, issue `busreset` and
+    inspect power-up register values with raw diagnostics. Verify other compatible
+    targets also reset; explicitly recover every affected driver. Inject an
+    ambiguous write failure and confirm local trust remains invalidated.
+13. Configure interrupt ALERT on known TMP102 and TMP112 devices, cross both
+    thermostat limits under controlled conditions, and issue `ara`. Record raw
+    response, address, configured model/POL, decoded cause and physical GPIO.
+    Test both polarities because the published TMP102/TMP112 status mappings
+    differ. With two alerting responders, verify lowest-address arbitration and
+    that one command acknowledges only one winner. Repeat protocol testing on
+    address-select TMP112D using its internal event state without an ALERT pin.
 
 No board has been flashed or physical validation claimed during this audit.
