@@ -27,6 +27,15 @@ hardware behavior.
 | SMBus serial-interface timeout | Autonomous chip behavior; callbacks must honor transfer timeouts | Physical stuck-line validation; no programmable timeout register |
 | Pointer persistence / repeated START | Pointer-write plus two-byte combined read callback | Framing tests and adapter builds; register auto-increment is not assumed |
 
+The driver deliberately uses complete two-byte register transfers with an explicit
+pointer. The datasheets also permit MSB-only transfers and reads using the previous
+pointer; these reduce bus traffic but expose no additional sensor setting. Raw
+word access covers every register without maintaining a shared pointer cache.
+High-speed sequencing and bus frequency remain transport responsibilities. The
+TMP112 text mentions Fast-mode Plus while its high-speed section requires a master
+code above 400 kHz; the examples use 400 kHz and make no claim of a clock-only
+1 MHz mode.
+
 The read-only resolution bits are fixed at `11`; they are not a programmable
 resolution selector. Extended mode changes encoding range, not measurement
 accuracy. Continuous mode has no sample counter or universal data-ready flag.

@@ -635,6 +635,58 @@ int main() {
     CHECK(bus.transfers == initial); // Owner blocks all explicit bus operations.
     shell.processCommand("cancel");
   }
+  {
+    Fixture original, replacement; tmp1x2_cli::Cli shell;
+    auto originalConfig = original.config(), replacementConfig = replacement.config();
+    replacementConfig.i2cAddress = 0x49;
+    shell.setup(original.platform(), originalConfig);
+    shell.setup(replacement.platform(), replacementConfig); // Unpolled initialization owns the original callbacks.
+    CHECK(original.transfers == 0 && replacement.transfers == 0 && replacement.output.empty());
+    CHECK(original.output.find("CLI setup cannot replace active work") != std::string::npos);
+    original.settle(shell); shell.processCommand("color off");
+    shell.processCommand("watch 2 1"); shell.setup(replacement.platform(), replacementConfig);
+    original.settle(shell); CHECK(replacement.transfers == 0 && replacement.output.empty());
+    shell.processCommand("selftest full"); shell.setup(replacement.platform(), replacementConfig);
+    shell.processCommand("stop"); original.settle(shell);
+    CHECK(replacement.transfers == 0 && replacement.output.empty());
+    shell.processCommand("mode shutdown"); original.settle(shell); shell.processCommand("start");
+    const unsigned pendingTraffic = original.transfers;
+    shell.setup(replacement.platform(), replacementConfig); original.settle(shell);
+    CHECK(original.transfers == pendingTraffic && replacement.transfers == 0);
+    shell.processCommand("tryread");
+    auto invalid = replacementConfig; invalid.i2cAddress = 0x01;
+    shell.setup(replacement.platform(), invalid);
+    invalid = replacementConfig; invalid.nowMs = nullptr;
+    auto noClock = replacement.platform(); noClock.nowMs = nullptr;
+    shell.setup(noClock, invalid);
+    CHECK(replacement.output.empty() && replacement.transfers == 0);
+    const unsigned beforeRead = original.transfers; shell.processCommand("read");
+    CHECK(original.transfers == beforeRead + 1); // Invalid replacement preserves the previous device and callbacks.
+    for (char ch : std::string("rawwrite 2 0x")) shell.feed(ch);
+    const unsigned beforeSetup = original.transfers;
+    shell.setup(replacement.platform(), replacementConfig);
+    CHECK(original.transfers == beforeSetup && replacement.transfers == 0);
+    shell.feed('\n'); // Incomplete input from the old session cannot run in the new one.
+    replacement.settle(shell);
+    CHECK(original.transfers == beforeSetup && replacement.lastAddress == 0x49);
+    replacement.output.clear(); shell.processCommand("stats"); shell.processCommand("sample"); shell.processCommand("settings");
+    CHECK(replacement.output.find("No watch/stress run statistics") != std::string::npos);
+    CHECK(replacement.output.find("No cached CLI sample") != std::string::npos);
+    CHECK(replacement.output.find("address=0x49") != std::string::npos);
+    CHECK(replacement.output.find('\033') == std::string::npos); // Presentation preferences survive session reuse.
+  }
+  {
+    Fixture bus; tmp1x2_cli::Cli shell;
+    shell.setup(bus.platform(), bus.config()); bus.settle(shell);
+    shell.processCommand("rawwrite 1 0x6080"); // Matching CONFIG does not prove the TEMP payload's format.
+    bus.regs[0] = 0x3200;
+    const unsigned before = bus.transfers;
+    shell.setup(bus.platform(), bus.config()); CHECK(bus.transfers == before);
+    bus.settle(shell);
+    CHECK(bus.regs[0] == 0x1900); // Reuse retained uncertainty and completed a fresh conversion.
+    bus.output.clear(); shell.processCommand("read");
+    CHECK(bus.output.find("25.000") != std::string::npos);
+  }
   std::puts("CLI parsing, diagnostics, full configuration exercise/restoration, bus operations, field helpers and cooperative workflows passed");
   return 0;
 }

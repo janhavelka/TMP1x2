@@ -14,10 +14,12 @@ import tempfile
 
 REQUIRED = {
     "library.json", "idf_component.yml", "CMakeLists.txt", "LICENSE", "README.md",
-    "src/TMP1x2.cpp", "include/TMP1x2/TMP1x2.h", "include/TMP1x2/Config.h",
+    "src/TMP1x2.cpp", "src/TMP1x2Configuration.cpp", "src/TMP1x2Measurement.cpp",
+    "src/TMP1x2Operations.cpp", "include/TMP1x2/TMP1x2.h", "include/TMP1x2/Config.h",
     "include/TMP1x2/Status.h", "include/TMP1x2/CommandTable.h", "include/TMP1x2/Version.h",
     "include/TMP1x2/BusOperations.h", "src/BusOperations.cpp",
     "examples/common/Tmp1x2Cli.h", "examples/common/Tmp1x2Cli.cpp",
+    "examples/common/Tmp1x2CliDiagnostics.cpp", "examples/common/Tmp1x2CliOutput.cpp",
     "examples/common/BoardConfig.h", "examples/01_basic_bringup_cli/main.cpp",
     "examples/esp_idf/basic/CMakeLists.txt", "examples/esp_idf/basic/main/CMakeLists.txt",
     "examples/esp_idf/basic/main/main.cpp", "examples/esp_idf/basic/platformio.ini",
@@ -89,8 +91,16 @@ int main() {
   TMP1x2::TMP1x2 sensor;
   TMP1x2::BusOperations::AlertResponse response;
   const auto decoded = TMP1x2::BusOperations::decodeAlertResponse(0x90, response);
+  TMP1x2::Sample sample;
+  const auto temperature = TMP1x2::TMP1x2::decodeTemperature(0x1900, sample);
+  uint16_t configuration = 0;
+  const auto encoded = TMP1x2::TMP1x2::encodeConfiguration(TMP1x2::Config{}, configuration);
+  TMP1x2::OperationToken token = 123;
+  const auto operation = sensor.startInitialize(0, 100, token);
   sensor.end();
-  return sensor.isBound() || !decoded.ok() || response.address != 0x48;
+  return sensor.isBound() || !decoded.ok() || response.address != 0x48 ||
+      !temperature.ok() || sample.celsius != 25 || !encoded.ok() || configuration != 0x6080 ||
+      !operation.is(TMP1x2::Err::NOT_BOUND) || token != 123;
 }
 ''', encoding="utf-8")
         (workspace / "CMakeLists.txt").write_text(

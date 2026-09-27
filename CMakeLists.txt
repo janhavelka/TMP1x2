@@ -1,10 +1,18 @@
+set(TMP1X2_SOURCES
+  src/TMP1x2.cpp
+  src/TMP1x2Configuration.cpp
+  src/TMP1x2Measurement.cpp
+  src/TMP1x2Operations.cpp
+  src/BusOperations.cpp
+)
+
 if(COMMAND idf_component_register)
-  idf_component_register(SRCS "src/TMP1x2.cpp" "src/BusOperations.cpp" INCLUDE_DIRS "include")
+  idf_component_register(SRCS ${TMP1X2_SOURCES} INCLUDE_DIRS "include")
   target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_17)
 else()
   cmake_minimum_required(VERSION 3.16)
   project(TMP1x2 VERSION 1.0.0 LANGUAGES CXX)
-  add_library(TMP1x2 src/TMP1x2.cpp src/BusOperations.cpp)
+  add_library(TMP1x2 ${TMP1X2_SOURCES})
   target_include_directories(TMP1x2 PUBLIC include)
   target_compile_features(TMP1x2 PUBLIC cxx_std_17)
   option(TMP1X2_BUILD_TESTS "Build native regression tests" OFF)
@@ -13,7 +21,11 @@ else()
     add_executable(tmp1x2_tests test/test_core.cpp)
     target_link_libraries(tmp1x2_tests PRIVATE TMP1x2)
     add_test(NAME core COMMAND tmp1x2_tests)
-    add_executable(tmp1x2_cli_tests test/cli/test_cli.cpp examples/common/Tmp1x2Cli.cpp)
+    add_executable(tmp1x2_cli_tests test/cli/test_cli.cpp
+      examples/common/Tmp1x2Cli.cpp
+      examples/common/Tmp1x2CliDiagnostics.cpp
+      examples/common/Tmp1x2CliOutput.cpp
+    )
     target_include_directories(tmp1x2_cli_tests PRIVATE examples/common)
     target_link_libraries(tmp1x2_cli_tests PRIVATE TMP1x2)
     add_test(NAME cli COMMAND tmp1x2_cli_tests)

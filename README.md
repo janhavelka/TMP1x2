@@ -131,3 +131,5 @@ See [validation results](docs/validation.md) for the checks actually run and
 [hardware validation](docs/hardware-validation.md) for the physical test procedure.
 The [2026-09-26 audit](docs/audit-2026-09-26.md) records sibling-library parity,
 confirmed defects, fixes and remaining design differences.
+The [code organization guide](docs/code-structure.md) maps implementation files
+and their ownership boundaries.

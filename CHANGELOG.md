@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- Preserve prior temperature-format evidence when synchronous setters or rebinding
+  adopt an externally changed EM value; the matching marker can still hold an old payload.
+- Retain an observed low-threshold mismatch when the following high-threshold read fails.
+- Reject CLI setup replacement during active work and preserve the session on invalid
+  replacement; clear stale input/results/statistics on successful idle reuse.
 - Preserve observed temperature-format uncertainty through partial observations,
   failures and recovery; adopting an observed EM setting requires a fresh sample.
 - Keep CLI target bindings and desired settings consistent after rejected commands.
@@ -16,6 +21,8 @@
 
 ### Added
 
+- Separate core and shared CLI implementation files by responsibility while retaining
+  their public APIs and shared configuration engine; update all build/package paths.
 - Complete chip/peer feature matrix and field-integration guide; consistent
   `init`, bound-profile initialization and common settings/sample/register names.
 - Pure configuration validation/encoding and expected register words, unit/count

@@ -53,6 +53,10 @@ requirement across subsequent failures, `end()`/`bind()` and matching CONFIG
 readback. A TEMP marker mismatch first reports `MEASUREMENT_NOT_READY` and latches
 dirty state; further managed reads require recovery. Changing desired EM to match
 the observed hardware cannot bypass that conversion requirement.
+Changing the desired EM through a synchronous setter or rebinding also retains
+the previous profile's format evidence, even without a prior diagnostic read.
+This covers hardware whose marker already matches the replacement profile while
+the payload still belongs to the previous format.
 Explicit `unbind()` forgets all state, including that evidence. A missing clock
 can leave format evidence latched even if the operation failed before writing;
 provide the clock and recover rather than trying to clear uncertainty by changing

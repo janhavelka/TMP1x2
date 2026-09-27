@@ -12,9 +12,10 @@ Windows host, GCC 15.1.0, Python 3.12.10, managed PlatformIO Core 6.1.19.
 | PlatformIO native tests | Passed all 18 test groups |
 | Cooperative owner API | Passed 14 independent groups covering admission, budgets, deadlines/wrap, staging, failure matrices, cancellation, retained results and passive health |
 | Model/address capabilities | Passed all 128 seven-bit addresses across three models, valid callback targets, rejected GPIO capability and preserved failed outputs |
-| Field helpers | Eight groups passed: validation/encoding, unit/count conversions, aliases, acquisition provenance/age, one-shot provenance, health/invalidation, live snapshots and partial-failure evidence |
+| Field helpers | Ten groups passed: validation/encoding, unit/count conversions, aliases, acquisition provenance/age, one-shot provenance, health/invalidation, live snapshots, partial-failure evidence, interrupted threshold observations and direct prior-format adoption |
 | Shared-bus operations | Exact frames and bounded one-callback behavior, silent invalid arguments, preserved failed outputs, all 256 ARA bytes and all supported model/address/POL/status cause combinations passed |
 | Comprehensive CLI workflows | Cooperative scan/self-check, all 18 configuration cases plus restore, first/second cancellation, restoration failures, extended-only baseline limits, pending-shot rejection, reset scope, ARA trust and platform-only timestamp regressions passed |
+| CLI setup reuse | Active owner/watch/full-test/manual-conversion replacement rejected without I2C; invalid idle replacement preserves callbacks; successful reuse clears stale input/results/statistics and retains format evidence |
 | Format-transition failure matrix | Passed all 44 cases: 11 callbacks in both directions, failing writes accepted/rejected by hardware |
 | Framework-free compile/link | Passed; no Arduino/Wire headers, including Xtensa INTERRUPT and Arduino LOW/HIGH macro-collision regressions |
 | Arduino ESP32-S3 and ESP32-S2 firmware | Compiled and linked with pioarduino 55.03.311 / Arduino 3.3.11 |
@@ -56,6 +57,13 @@ configuration changes. Resetting statistics preserves OFFLINE and last-fault
 evidence. Shared-bus tests keep both ARA status-bit values and verify published
 TMP102/TMP112 cause differences without assigning an identity to generic responders.
 
+The final review adds 16 interrupted-threshold cases and 12 direct format-adoption
+cases. It reproduces marker-only external EM changes followed immediately by a
+synchronous setter or rebinding, without a prior diagnostic observation. Both
+format directions require guarded conversion before trusted decoding; absent
+clock hooks preserve uncertainty for cooperative recovery. The structural split
+was also checked for all 87 existing method definitions with unchanged signatures.
+
 The native IDF results are full application/component builds using `framework =
 espidf`, not SDK-header compilation or an Arduino compatibility layer. Both target
 configurations were checked for 4 MB flash and package version 1.0.0. The separate
@@ -76,22 +84,26 @@ their final logs are `build-parity/arduino.log` and `build-parity/idf.log`.
 The subsequent complete-feature/field-helper pass also compiled and linked all
 four firmware environments, including the new receive-only/general-call adapter
 paths and `BusOperations` component source; final logs are under `build-field/`.
+The final datasheet/structure review rebuilt the split core and CLI for all four
+firmware environments successfully. Strict CTest passed all nine entries, the
+helper suite passed ten groups, native PlatformIO passed 18 groups, and the
+framework-free target linked. Final firmware logs are under `build-recheck/`.
 
 Reproduce the checks from the repository root:
 
 ```powershell
-cmake -S . -B build-field -G Ninja -DTMP1X2_BUILD_TESTS=ON "-DCMAKE_CXX_FLAGS=-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Werror"
-cmake --build build-field --parallel
-ctest --test-dir build-field --output-on-failure
+cmake -S . -B build-recheck -G Ninja -DTMP1X2_BUILD_TESTS=ON "-DCMAKE_CXX_FLAGS=-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Werror"
+cmake --build build-recheck --parallel
+ctest --test-dir build-recheck --output-on-failure
 python tools/check_contracts.py
 .\scripts\pio.cmd test -e native
 .\scripts\pio.cmd run -e native_core_no_arduino -e esp32s3dev -e esp32s2dev
 .\scripts\pio.cmd run --project-dir examples/esp_idf/basic -e esp32s3 -e esp32s2
-.\scripts\pio.cmd pkg pack -o build-field/TMP1x2-field.tar.gz .
-python tools/check_package.py build-field/TMP1x2-field.tar.gz --generator Ninja
+.\scripts\pio.cmd pkg pack -o build-recheck/TMP1x2-recheck.tar.gz .
+python tools/check_package.py build-recheck/TMP1x2-recheck.tar.gz --generator Ninja
 ```
 
-Latest firmware logs and release archive are under ignored `build-field/`;
-earlier audit/parity logs remain under `build-audit/` and `build-parity/`.
+Latest firmware logs and release archive are under ignored `build-recheck/`;
+earlier logs remain under `build-audit/`, `build-parity/` and `build-field/`.
 No board was flashed. The [hardware procedure](hardware-validation.md) remains
 the next step for electrical, conversion-timing and ALERT behavior evidence.

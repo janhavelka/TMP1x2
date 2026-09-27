@@ -1,6 +1,6 @@
 # Diagnostic examples
 
-Both examples run the same framework-neutral command processor in `common/Tmp1x2Cli.cpp`. Arduino and native ESP-IDF therefore have the same commands, aliases, help layout, ANSI colors, finite sampling workflows and parsing behavior. These are bring-up diagnostics, not a multitask bus-manager implementation.
+Both examples run the same framework-neutral command processor in `common/Tmp1x2Cli*.cpp`, split into command dispatch, diagnostics and output. Arduino and native ESP-IDF therefore have the same commands, aliases, help layout, ANSI colors, finite sampling workflows and parsing behavior. These are bring-up diagnostics, not a multitask bus-manager implementation.
 
 `common/BoardConfig.h` selects SDA 8, SCL 9, 400 kHz and a 50 ms transaction timeout. Override `TMP1X2_I2C_SDA`/`TMP1X2_I2C_SCL` or edit this example-only file for your hardware. Optional `TMP1X2_ALERT_PIN` defaults to -1 (disabled); configure an input with appropriate external pull-up for physical ALERT diagnostics. Fit appropriate external I2C pull-ups. Platform pin setup and handles stay in the examples.
 

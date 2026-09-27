@@ -269,12 +269,97 @@ static void snapshotFailureEvidence() {
   }
 }
 
+static void thresholdObservationFailureEvidence() {
+  // Each successful observation is evidence even if a later transfer fails.
+  // Failed callbacks do not publish their possibly partial output as evidence.
+  for (unsigned extended = 0; extended < 2; ++extended) {
+    for (unsigned changedRegister = 2; changedRegister <= 3; ++changedRegister) {
+      for (unsigned fail = 0; fail <= 3; ++fail) {
+        Device d; t::TMP1x2 driver; auto config = d.config();
+        config.extendedMode = extended != 0;
+        CHECK(driver.begin(config).ok());
+        d.registers[changedRegister] ^= 0x100U;
+        const unsigned before = d.calls;
+        const uint32_t failuresBefore = driver.totalFailures();
+        const uint32_t successesBefore = driver.totalSuccess();
+        if (fail != 0) d.failAt = before + fail;
+        float low = 123, high = 456;
+        const auto status = driver.readThresholds(low, high);
+        const bool observedMismatch = fail == 0 || fail > changedRegister;
+        CHECK(driver.hardwareConfigDirty() == observedMismatch);
+        if (fail == 0) {
+          CHECK(status.ok() && d.calls == before + 3);
+          CHECK(low == t::TMP1x2::decodeThreshold(d.registers[2], extended != 0));
+          CHECK(high == t::TMP1x2::decodeThreshold(d.registers[3], extended != 0));
+          CHECK(driver.totalFailures() == failuresBefore);
+          CHECK(driver.totalSuccess() == successesBefore + 3);
+        } else {
+          CHECK(status.is(t::Err::I2C_TIMEOUT) && d.calls == before + fail);
+          CHECK(low == 123 && high == 456);
+          CHECK(driver.totalFailures() == failuresBefore + 1);
+          CHECK(driver.totalSuccess() == successesBefore + fail - 1);
+          CHECK(driver.lastError().detail == 91);
+        }
+        if (observedMismatch) {
+          CHECK(driver.hardwareConfigDirtyError().is(t::Err::CONFIG_MISMATCH));
+          CHECK(driver.hardwareConfigDirtyError().detail == d.registers[changedRegister]);
+          t::Sample sample; sample.celsius = 999;
+          CHECK(driver.readSample(sample).is(t::Err::INVALID_CONFIG)); CHECK(sample.celsius == 999);
+          d.failAt = 0; CHECK(driver.recover().ok()); CHECK(!driver.hardwareConfigDirty());
+        }
+      }
+    }
+  }
+}
+
+static void changedDesiredFormatKeepsPreviousEvidence() {
+  for (unsigned initialExtended = 0; initialExtended < 2; ++initialExtended) {
+    for (unsigned clocked = 0; clocked < 2; ++clocked) {
+      // Cover the synchronous setter, reinitialization, and staged owner API.
+      for (unsigned path = 0; path < 3; ++path) {
+        Device d; t::TMP1x2 driver; auto config = d.config(clocked != 0);
+        config.extendedMode = initialExtended != 0;
+        if (config.extendedMode) {
+          d.registers[1] |= 0x10U;
+          d.registers[0] = 0x0C81U;
+        }
+        CHECK(driver.begin(config).ok()); CHECK(d.ms == 0);
+        // TI permits EM's marker to change before the payload is refreshed.
+        d.store(static_cast<uint16_t>(d.registers[1] ^ 0x10U));
+        config.extendedMode = !config.extendedMode;
+        if (path == 2) {
+          t::OperationToken token = 0; t::OperationResult result;
+          CHECK(driver.startConfigure(config, d.ms, 1000, token).inProgress());
+          CHECK(complete(driver, d, token, result));
+        } else {
+          const auto status = path == 0 ? driver.setExtendedMode(config.extendedMode) : driver.begin(config);
+          if (clocked != 0) CHECK(status.ok());
+          else {
+            CHECK(status.is(t::Err::INVALID_CONFIG)); CHECK(driver.hardwareConfigDirty());
+            t::Sample unchanged; unchanged.celsius = 999;
+            CHECK(!driver.readSample(unchanged).ok()); CHECK(unchanged.celsius == 999);
+            t::OperationToken token = 0; t::OperationResult result;
+            CHECK(driver.startRecover(d.ms, 1000, token).inProgress());
+            CHECK(complete(driver, d, token, result));
+          }
+        }
+        CHECK(d.ms >= 72);
+        CHECK(!driver.hardwareConfigDirty()); CHECK(driver.getExtendedMode() == config.extendedMode);
+        t::Sample sample; CHECK(driver.readSample(sample).ok());
+        CHECK(sample.celsius == 25 && sample.extendedMode == config.extendedMode);
+      }
+    }
+  }
+}
+
 int main() {
   struct Test { const char* name; void (*run)(); };
   const Test tests[] = {{"public validation and encoding", validationAndEncoding}, {"temperature unit helpers", unitConversions},
     {"lifecycle and cached API parity", lifecycleAndCachedNames}, {"sample clock provenance and age", cacheTimeProvenance},
     {"one-shot sample provenance", completedConversionProvenance}, {"health statistics and invalidation", healthAndInvalidation},
-    {"live register snapshots", registerSnapshots}, {"snapshot failure evidence", snapshotFailureEvidence}};
+    {"live register snapshots", registerSnapshots}, {"snapshot failure evidence", snapshotFailureEvidence},
+    {"threshold observation failure evidence", thresholdObservationFailureEvidence},
+    {"previous desired format evidence", changedDesiredFormatKeepsPreviousEvidence}};
   for (const auto& test : tests) { const int before = failures; test.run(); if (before == failures) std::printf("[PASS] %s\n", test.name); }
   return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

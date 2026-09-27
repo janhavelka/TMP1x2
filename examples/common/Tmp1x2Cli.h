@@ -20,6 +20,7 @@ struct TransferStats {
 };
 struct Platform {
   void (*vprintf)(void*, const char*, va_list) = nullptr;
+  // If Config::nowMs is also supplied, both clocks must share a time origin.
   uint32_t (*nowMs)(void*) = nullptr;
   TMP1x2::Status (*probeAddress)(uint8_t, void*) = nullptr;
   TransferStats (*transferStats)(void*) = nullptr;
@@ -34,6 +35,8 @@ struct Platform {
 
 class Cli {
  public:
+  // Reuse is bus-silent until tick(). Active work and pending manual conversions
+  // reject replacement; invalid replacements preserve the previous session.
   void setup(const Platform& platform, const TMP1x2::Config& config);
   void feed(char value);
   void processCommand(const char* text);
@@ -71,6 +74,7 @@ class Cli {
   const char* color(unsigned code) const;
   uint32_t now() const;
   Platform _platform{};
+  bool _configured = false;
   TMP1x2::Config _config{};
   TMP1x2::TMP1x2 _device{};
   int _configuredAlertPin = -1;

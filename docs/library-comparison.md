@@ -28,6 +28,10 @@ Other top-level standalone libraries were classified as non-I2C: ADS1261_ESP32 a
 OPT4001 supplies the repository shape and terminal presentation. ADS1115 supplies the most directly comparable register-transport contract. SHT3x demonstrates how one framework-neutral command processor can give identical Arduino/native IDF CLI behavior without compiling Arduino facades into IDF. Sensor protocol facts must come from TI rather than any sibling chip driver.
 
 - Public headers under `include/TMP1x2/`: `TMP1x2.h`, `Config.h`, `Status.h`, `CommandTable.h`, generated `Version.h`; implementation under `src/`.
+- Core and shared CLI implementations are grouped by responsibility; see the
+  [code organization guide](code-structure.md). Public headers retain the common
+  sibling layout. Most peers use one core source file; the internal split is a
+  maintainability choice, not a requirement for API compatibility.
 - C++17 core without Arduino, ESP-IDF, FreeRTOS, logging, platform timing, allocation, bus handles or pins. Example adapters own those resources.
 - `Status { Err code; int32_t detail; const char* msg; }`, static message strings, `ok()`, `is()`, `inProgress()`, explicit bool, `Ok()` and `Error()` factories. Typed `enum class ... : uint8_t`, uppercase enum values/constants, camelCase methods and fields, `_camelCase` members.
 - `I2cWriteFn = Status (*)(uint8_t, const uint8_t*, size_t, uint32_t timeoutMs, void*)`; `I2cWriteReadFn` adds TX/RX buffers and lengths and performs one atomic repeated-start transfer. Caller owns locking, bus lifecycle, pins, clock frequency, timeout enforcement, scheduling and recovery. Preserve meaningful transport errors; do not invent NACK phase information.
