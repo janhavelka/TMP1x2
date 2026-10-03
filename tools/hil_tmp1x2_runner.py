@@ -12,14 +12,19 @@ from dataclasses import asdict, dataclass
 import datetime as dt
 import json
 import math
+import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Callable
 
 ROOT = Path(__file__).resolve().parents[1]
+MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+MAX_RETAINED_CHARS = 16 * 1024 * 1024
+MAX_RESULTS = 10000
 ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 PROMPT = re.compile(r"(?:^|\n)(?:> )+$")
 ERROR = re.compile(r"\[E\]\s+(\w+)")
@@ -64,9 +69,68 @@ class CheckError(RuntimeError):
     pass
 
 
+class EvidenceFiles:
+    """Reserve output paths before opening hardware and preserve live transcripts."""
+    def __init__(self, path: Path, args):
+        self.path = path
+        self.transcript = None
+        self.lock = path.with_suffix(".json.lock")
+        self.owns_lock = False
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with self.lock.open("x", encoding="utf-8"):
+                self.owns_lock = True
+            if path.exists() or path.with_suffix(".txt").exists():
+                raise FileExistsError("refusing to overwrite existing HIL evidence")
+            # An interrupted run leaves a valid INCONCLUSIVE document, never PASS.
+            with path.open("x", encoding="utf-8") as output:
+                json.dump(dict(schema_version=1, outcome="INCONCLUSIVE", hardware_run=None,
+                               reason="run has not completed", metadata=vars(args)), output, indent=2)
+                output.write("\n")
+            self.transcript = path.with_suffix(".txt").open("xb")
+        except (OSError, ValueError):
+            self.close()
+            raise
+
+    def write_json(self, report: dict):
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.path.parent,
+                                             prefix=self.path.name + ".", suffix=".tmp", delete=False) as output:
+                temporary = Path(output.name)
+                json.dump(report, output, indent=2, allow_nan=False)
+                output.write("\n")
+            os.replace(temporary, self.path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+    def close_transcript(self):
+        stream = self.transcript
+        self.transcript = None
+        if stream is not None:
+            stream.close()
+
+    def close(self):
+        try:
+            self.close_transcript()
+        finally:
+            if self.owns_lock:
+                self.lock.unlink(missing_ok=True)
+                self.owns_lock = False
+
+
 def is_operation(command: str) -> bool:
     return command in {"measure", "recover", "shutdown"} or command.split()[0] in {
         "mode", "rate", "extended", "threshold", "alert", "polarity", "faults"}
+
+
+def operation_status(output: str):
+    started = re.search(r"Operation started: token=(\d+) kind=(\w+)", output)
+    if not started:
+        return None
+    return re.search(r"Operation result: token=" + started[1] + r" kind=" + started[2] +
+                     r"\b[^\n]*\n\[([IE])\] (\w+)\b", output)
 
 
 def response_complete(command: str, output: str) -> bool:
@@ -78,7 +142,8 @@ def response_complete(command: str, output: str) -> bool:
         started = re.search(r"Operation started: token=(\d+) kind=(\w+)", output)
         if not started:
             return bool(ERROR.search(output))
-        return bool(re.search(r"Operation result: token=" + started[1] + r" kind=" + started[2] + r"\b[^\n]*\n\[[IE]\] \w+", output))
+        terminal = operation_status(output)
+        return terminal is not None and terminal[2] != "IN_PROGRESS"
     if command in {"selfcheck", "selftest full", "settings read", "snapshot read"}:
         return bool(DIAGNOSTIC.search(output) or ERROR.search(output))
     if command.startswith(("stress ", "stress_mix ")):
@@ -105,7 +170,8 @@ def classify(command: str, output: str, completed: bool = True) -> tuple[str, st
     if "[FAIL]" in output:
         return "FAIL", "firmware diagnostic reported a failed check"
     if is_operation(command):
-        if not response_complete(command, output) or not re.search(r"Operation result:[^\n]*\n\[I\] OK\b", output):
+        terminal = operation_status(output)
+        if not response_complete(command, output) or terminal is None or terminal.groups() != ("I", "OK"):
             return "INCONCLUSIVE", "missing matching successful terminal operation result"
     elif command in {"selfcheck", "selftest full", "settings read", "snapshot read"}:
         summary = DIAGNOSTIC.search(output)
@@ -144,7 +210,21 @@ def classify(command: str, output: str, completed: bool = True) -> tuple[str, st
     else:
         if command not in SYNC_PATTERNS or not re.search(SYNC_PATTERNS[command], output):
             return "INCONCLUSIVE", "missing command-specific response"
+        if command == "stop":
+            summary = DIAGNOSTIC.search(output)
+            if summary and int(summary[3]):
+                return "FAIL", "cancelled diagnostic recorded failed checks"
+            if ("scheduling restoration" in output or "Baseline restoration:" in output) and "Baseline restoration: verified\n" not in output:
+                return "FAIL", "cancelled full test did not verify baseline restoration"
     return "PASS", "complete response with required checks"
+
+
+def expected_error(result: Result, allowed: set[str]) -> bool:
+    """An expected physical error must not hide another error or broken framing."""
+    output = clean(result.output)
+    errors = ERROR.findall(output)
+    return (result.outcome == "FAIL" and bool(errors) and set(errors) <= allowed and
+            "[FAIL]" not in output and response_complete(result.command, output))
 
 
 def parse_settings(output: str) -> dict:
@@ -154,11 +234,15 @@ def parse_settings(output: str) -> dict:
     pin = re.search(r"physical ALERT=(available|not present) pin=(-?\d+)", output)
     if not desired or not thresholds or not pin:
         raise CheckError("cannot capture a complete desired profile from settings")
-    return dict(model=desired[1], address=int(desired[2], 16), timeout_ms=int(desired[3]),
+    profile = dict(model=desired[1], address=int(desired[2], 16), timeout_ms=int(desired[3]),
                 mode=desired[4], rate=desired[5], extended=desired[6] == "yes",
                 low=float(thresholds[1]), high=float(thresholds[2]), alert=thresholds[3],
                 polarity=thresholds[4], faults=int(thresholds[5]), offline_threshold=int(thresholds[6]),
                 alert_pin=int(pin[2]), alert_output=pin[1] == "available")
+    minimum, maximum = (-256.0, 255.9375) if profile["extended"] else (-128.0, 127.9375)
+    if not minimum <= profile["low"] <= profile["high"] <= maximum:
+        raise CheckError("captured thresholds are not finite, ordered and representable")
+    return profile
 
 
 def restore_commands(profile: dict) -> list[str]:
@@ -231,51 +315,95 @@ def check_comparator(output: str, polarity: str, faults: int, active: bool) -> t
 
 class SerialSession:
     def __init__(self, serial, command_timeout: float, long_timeout: float,
-                 clock: Callable = time.monotonic):
+                 clock: Callable = time.monotonic, transcript_file=None):
         self.serial = serial
         self.command_timeout = command_timeout
         self.long_timeout = long_timeout
         self.clock = clock
         self.transcript: list[str] = []
+        self.transcript_file = transcript_file
+        self.transcript_error = None
+        self.retained_chars = 0
+
+    def log(self, data: bytes):
+        if self.transcript_file is not None and self.transcript_error is None:
+            try:
+                self.transcript_file.write(data)
+                self.transcript_file.flush()
+            except OSError as exc:
+                # Keep cleanup possible even if the evidence disk becomes full.
+                self.transcript_error = str(exc)
+
+    def retain(self, text: str):
+        self.transcript.append(text)
+        self.retained_chars += len(text)
+        while self.retained_chars > MAX_RETAINED_CHARS and len(self.transcript) > 1:
+            self.retained_chars -= len(self.transcript.pop(0))
+
+    def read(self, deadline: float):
+        remaining = max(0.0, deadline - self.clock())
+        if not remaining:
+            return b""
+        if hasattr(self.serial, "timeout"):
+            self.serial.timeout = min(0.05, remaining)
+        return self.serial.read(max(1, min(getattr(self.serial, "in_waiting", 0), 4096)))
 
     def capture_boot(self, seconds: float) -> str:
         end = self.clock() + seconds
-        chunks = []
-        while self.clock() < end:
-            data = self.serial.read(max(1, min(getattr(self.serial, "in_waiting", 0), 4096)))
-            if data:
-                chunks.append(data)
-        output = b"".join(chunks).decode("utf-8", errors="replace")
-        self.transcript.append("=== startup ===\n" + output)
+        chunks = bytearray()
+        self.log(b"=== startup ===\n")
+        try:
+            while self.clock() < end:
+                data = self.read(end)
+                if data:
+                    self.log(data)
+                    if len(chunks) + len(data) > MAX_RESPONSE_BYTES:
+                        raise OSError("startup output exceeded 8 MiB safety bound")
+                    chunks.extend(data)
+        finally:
+            output = chunks.decode("utf-8", errors="replace")
+            self.retain("=== startup ===\n" + output)
         return output
 
-    def command(self, command: str) -> Result:
+    def command(self, command: str, timeout_s=None) -> Result:
         started = self.clock()
         timeout = self.long_timeout if command == "selftest full" or command.startswith(("stress ", "stress_mix ")) or command == "stop" else self.command_timeout
+        if timeout_s is not None:
+            timeout = min(timeout, max(0.0, timeout_s))
+        deadline = started + timeout
         chunks = bytearray()
         complete = False
+        self.log(f"\n=== {command} ===\n".encode("utf-8"))
         try:
+            if timeout <= 0:
+                raise OSError("command deadline already expired; command was not sent")
             payload = (command + "\n").encode("ascii")
+            if hasattr(self.serial, "write_timeout"):
+                self.serial.write_timeout = min(self.command_timeout, timeout)
             if self.serial.write(payload) != len(payload):
                 raise OSError("partial serial command write")
             # No serial.flush(): some host drivers have an unbounded drain wait.
-            while self.clock() - started < timeout:
-                data = self.serial.read(max(1, min(getattr(self.serial, "in_waiting", 0), 4096)))
+            while self.clock() < deadline:
+                data = self.read(deadline)
                 if data:
-                    chunks.extend(data)
-                    if len(chunks) > 8 * 1024 * 1024:
+                    self.log(data)
+                    if len(chunks) + len(data) > MAX_RESPONSE_BYTES:
                         raise OSError("response exceeded 8 MiB safety bound")
-                    if response_complete(command, chunks.decode("utf-8", errors="replace")):
+                    chunks.extend(data)
+                    # CLI prompts end in these ASCII bytes. Avoid reparsing every
+                    # sample in a long stress stream while no prompt is present.
+                    if chunks.endswith(b"> ") and response_complete(command, chunks.decode("utf-8", errors="replace")):
                         complete = True
                         break
-        except OSError as exc:
+        except (OSError, KeyboardInterrupt) as exc:
             output = chunks.decode("utf-8", errors="replace")
-            result = Result(command, command, "INCONCLUSIVE", str(exc), output, self.clock() - started)
+            result = Result(command, command, "INCONCLUSIVE", str(exc) or "operator interrupted", output, self.clock() - started)
         else:
             output = chunks.decode("utf-8", errors="replace")
             outcome, reason = classify(command, output, complete)
             result = Result(command, command, outcome, reason, output, self.clock() - started)
-        self.transcript.append(f"=== {command} [{result.outcome}] ===\n{result.output}")
+        self.retain(f"=== {command} [{result.outcome}] ===\n{result.output}")
+        self.log(f"\n=== {result.outcome}: {result.reason} ===\n".encode("utf-8"))
         return result
 
 
@@ -289,10 +417,29 @@ class Runner:
         self.mutated = False
         self.background_started = False
         self.suites = [dict(name=name, outcome="NOT_RUN") for name in args.suite]
+        self.retained_chars = 0
+        self.cleanup_active = False
 
     def record(self, result: Result) -> Result:
+        if len(self.results) >= MAX_RESULTS and not self.cleanup_active:
+            self.results.append(Result("session evidence limit", "", "INCONCLUSIVE",
+                                       "result limit reached; stopping suites and attempting cleanup"))
+            raise CheckError("session exceeded result limit")
+        if self.session.transcript_error is not None and not self.cleanup_active and result.outcome == "PASS":
+            result.outcome = "INCONCLUSIVE"
+            result.reason = "transcript write failed: " + str(self.session.transcript_error)
         self.results.append(result)
+        self.retained_chars += len(result.output)
+        if self.retained_chars > MAX_RETAINED_CHARS:
+            for previous in self.results:
+                if self.retained_chars <= MAX_RETAINED_CHARS or previous is result:
+                    break
+                if previous.output:
+                    self.retained_chars -= len(previous.output)
+                    previous.output = ""
+                    previous.reason += "; output retained in transcript file only"
         print(f"{result.outcome:12} {result.check}: {result.reason}", flush=True)
+        self.session.log(f"\n=== check: {result.check} [{result.outcome}] {result.reason} ===\n".encode("utf-8"))
         return result
 
     def assertion(self, name: str, condition: bool, reason: str) -> None:
@@ -300,8 +447,8 @@ class Runner:
         if result.outcome != "PASS":
             raise CheckError(reason)
 
-    def command(self, command: str, required=True) -> Result:
-        result = self.record(self.session.command(command))
+    def command(self, command: str, required=True, timeout_s=None) -> Result:
+        result = self.record(self.session.command(command, timeout_s=timeout_s))
         if required and result.outcome != "PASS":
             raise CheckError(f"{command}: {result.reason}")
         return result
@@ -431,18 +578,18 @@ class Runner:
         end = time.monotonic() + self.args.fault_window
         offline = None
         while time.monotonic() < end:
-            result = self.session.command("read")
+            result = self.session.command("read", timeout_s=end - time.monotonic())
             error = ERROR.search(clean(result.output))
-            if result.outcome == "FAIL" and error and error[1] in TRANSPORT_ERRORS:
+            if expected_error(result, TRANSPORT_ERRORS):
                 result.outcome, result.reason = "PASS", "expected transport failure during guided disconnection: " + error[1]
             self.record(result)
             if result.outcome != "PASS":
                 raise CheckError("unexpected disconnected read result")
-            health = parse_health(self.command("health").output)
+            health = parse_health(self.command("health", timeout_s=end - time.monotonic()).output)
             if health["state"] == "OFFLINE":
                 offline = health
                 break
-            time.sleep(0.1)
+            time.sleep(min(0.1, max(0.0, end - time.monotonic())))
         if offline is None:
             self.record(Result("disconnect stimulus", "", "INCONCLUSIVE", "sensor did not reach OFFLINE during the operator window"))
             raise CheckError("disconnect stimulus not observed")
@@ -451,17 +598,17 @@ class Runner:
         end = time.monotonic() + self.args.fault_window
         present = False
         while time.monotonic() < end:
-            result = self.session.command("probe")
+            result = self.session.command("probe", timeout_s=end - time.monotonic())
             present = result.outcome == "PASS"
             error = ERROR.search(clean(result.output))
-            if result.outcome == "FAIL" and error and error[1] in TRANSPORT_ERRORS:
+            if expected_error(result, TRANSPORT_ERRORS):
                 result.outcome, result.reason = "PASS", "expected absent probe while awaiting reconnection: " + error[1]
             self.record(result)
             if result.outcome != "PASS":
                 raise CheckError("unexpected reconnect probe result")
             if present:
                 break
-            time.sleep(0.1)
+            time.sleep(min(0.1, max(0.0, end - time.monotonic())))
         if not present:
             self.record(Result("reconnect stimulus", "", "INCONCLUSIVE", "sensor did not reappear during the operator window"))
             raise CheckError("reconnection not observed")
@@ -480,13 +627,15 @@ class Runner:
         health = parse_health(self.command("health").output)
         if health["pending"]:
             end = time.monotonic() + self.args.command_timeout
-            while time.monotonic() < end:
-                result = self.session.command("tryread")
+            for _ in range(100):
+                if time.monotonic() >= end:
+                    break
+                result = self.session.command("tryread", timeout_s=end - time.monotonic())
                 error = ERROR.search(clean(result.output))
-                if result.outcome == "FAIL" and error and error[1] == "MEASUREMENT_NOT_READY":
+                if expected_error(result, {"MEASUREMENT_NOT_READY"}):
                     result.outcome, result.reason = "PASS", "waiting for retained manual one-shot to finish"
                     self.record(result)
-                    time.sleep(0.01)
+                    time.sleep(min(0.01, max(0.0, end - time.monotonic())))
                     continue
                 self.record(result)
                 if result.outcome != "PASS":
@@ -496,6 +645,7 @@ class Runner:
             self.assertion("cleanup one-shot consumed", not health["pending"], "retained conversion must complete before profile recovery")
 
     def restore(self):
+        self.cleanup_active = True
         if self.baseline is None or not (self.mutated or self.background_started):
             return
         if self.mutated:
@@ -531,7 +681,7 @@ class Runner:
                 current_suite["outcome"] = "FAIL"
             if not any(result.outcome in {"FAIL", "INCONCLUSIVE"} for result in self.results):
                 self.record(Result("session", "", "INCONCLUSIVE", str(exc)))
-        except (OSError, KeyboardInterrupt) as exc:
+        except (OSError, ValueError, KeyboardInterrupt) as exc:
             self.record(Result("session", "", "INCONCLUSIVE", str(exc) or "operator interrupted"))
         finally:
             self.restore()
@@ -544,23 +694,52 @@ def git_value(*args: str) -> str:
         return "unknown"
 
 
-def write_report(path: Path, runner: Runner) -> int:
+def write_report(path: Path, runner: Runner, evidence=None) -> int:
+    owns_evidence = evidence is None
+    try:
+        if evidence is None:
+            evidence = EvidenceFiles(path, runner.args)
+            evidence.transcript.write("\n\n".join(runner.session.transcript).encode("utf-8"))
+            evidence.transcript.flush()
+        if runner.session.transcript_error is not None:
+            runner.cleanup_active = True
+            runner.record(Result("transcript", "", "INCONCLUSIVE", "transcript write failed: " + runner.session.transcript_error))
+        # Close before final JSON so delayed filesystem failures cannot leave a
+        # PASS report paired with an evidence-error exit status.
+        runner.session.transcript_file = None
+        try:
+            evidence.close_transcript()
+        except OSError as exc:
+            runner.cleanup_active = True
+            runner.record(Result("transcript close", "", "INCONCLUSIVE", str(exc)))
+        return _write_report(path, runner, evidence)
+    except (OSError, ValueError) as exc:
+        print(f"Could not finalize HIL evidence at {path}: {exc}. Run is INCONCLUSIVE; preserve the existing transcript and initial report.", file=sys.stderr)
+        print(json.dumps(dict(outcome="INCONCLUSIVE", reason="report write failed", restoration=runner.restoration,
+                              baseline=runner.baseline), allow_nan=False))
+        return 2
+    finally:
+        if owns_evidence and evidence is not None:
+            try:
+                evidence.close()
+            except OSError as exc:
+                print(f"Could not remove HIL reservation lock; preserve the completed evidence: {exc}", file=sys.stderr)
+
+
+def _write_report(path: Path, runner: Runner, evidence: EvidenceFiles) -> int:
     counts = {outcome: sum(result.outcome == outcome for result in runner.results) for outcome in ("PASS", "FAIL", "SKIP", "INCONCLUSIVE")}
     outcome = "FAIL" if counts["FAIL"] else "INCONCLUSIVE" if counts["INCONCLUSIVE"] or not counts["PASS"] else "PASS"
+    dirty_status = git_value("status", "--porcelain")
     report = dict(schema_version=1, recorded_utc=dt.datetime.now(dt.timezone.utc).isoformat(),
                   outcome=outcome, scope="selected automated checks only; physical accuracy/ALERT/timing require separate evidence",
                   hardware_run=bool(getattr(runner.session, "hardware_connected", False)), metadata=vars(runner.args), git_commit=git_value("rev-parse", "HEAD"),
-                  git_dirty=bool(git_value("status", "--porcelain")), baseline=runner.baseline,
+                  git_dirty=None if dirty_status == "unknown" else bool(dirty_status), baseline=runner.baseline,
                   restoration=runner.restoration, counts=counts, suites=runner.suites,
                   manual_gates=[dict(name=name, outcome="NOT_RUN") for name in
                                 ("calibrated thermal accuracy", "exact conversion and fault-queue timing",
                                  "interrupt ALERT acknowledgement", "ARA arbitration", "general-call reset", "bus electrical margins")],
                   results=[asdict(result) for result in runner.results])
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.with_suffix(".txt").write_text("\n\n".join(runner.session.transcript), encoding="utf-8")
-    temporary = path.with_suffix(".json.tmp")
-    temporary.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    evidence.write_json(report)
     print(f"{outcome}: {path}; restoration: {runner.restoration}")
     return 1 if outcome == "FAIL" else 2 if outcome == "INCONCLUSIVE" else 0
 
@@ -600,6 +779,11 @@ def parse_args(argv=None):
         parser.error("stress count must be 1..100000 and baud must be positive")
     if not all(math.isfinite(value) for value in (args.min_c, args.max_c)) or args.min_c > args.max_c:
         parser.error("temperature window must be finite and ordered")
+    for name in ("command_timeout", "long_timeout", "startup_seconds", "silence_seconds", "fault_window"):
+        if getattr(args, name) > 86400:
+            parser.error("time windows must not exceed 86400 seconds")
+    if len(args.suite) > 32:
+        parser.error("select at most 32 suites per run")
     if Path(args.report).suffix.lower() != ".json":
         parser.error("--report must end in .json")
     if args.model and args.address is not None:
@@ -629,33 +813,43 @@ def main(argv=None) -> int:
         if MUTATING.intersection(args.suite):
             print("finally: stop once; restore captured profile using recover/typed settings; verify snapshot and health")
         return 0
-    try:
-        import serial
-    except ImportError:
-        print("pyserial is required for hardware only: python -m pip install pyserial", file=sys.stderr)
-        return 2
     report_path = Path(args.report)
-    # Check artifact destination before touching a real board.
-    if report_path.exists() or report_path.with_suffix(".txt").exists():
-        print("Refusing to overwrite existing HIL evidence; select a new --report path.", file=sys.stderr)
+    try:
+        evidence = EvidenceFiles(report_path, args)
+    except (OSError, ValueError) as exc:
+        print(f"Cannot reserve HIL evidence at {report_path}: {exc}. No serial connection opened.", file=sys.stderr)
         return 2
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    connection = serial.Serial(port=None, baudrate=args.baud, timeout=0.05, write_timeout=args.command_timeout)
-    connection.dtr = False
-    connection.rts = False
-    session = SerialSession(connection, args.command_timeout, args.long_timeout)
+    connection = None
+    session = SerialSession(None, args.command_timeout, args.long_timeout, transcript_file=evidence.transcript)
     runner = Runner(session, args)
     try:
+        import serial
+        connection = serial.Serial(port=None, baudrate=args.baud, timeout=0.05, write_timeout=args.command_timeout)
+        session.serial = connection
+        connection.dtr = False
+        connection.rts = False
         connection.port = args.port
         connection.open()
         session.hardware_connected = True
         session.capture_boot(args.startup_seconds)
         runner.run()
-    except (OSError, KeyboardInterrupt) as exc:
+    except ImportError:
+        runner.record(Result("serial setup", "", "INCONCLUSIVE", "pyserial is required: python -m pip install pyserial"))
+    except (OSError, ValueError, KeyboardInterrupt) as exc:
         runner.record(Result("serial setup", "", "INCONCLUSIVE", str(exc) or "operator interrupted"))
     finally:
-        connection.close()
-    return write_report(report_path, runner)
+        if connection is not None:
+            try:
+                connection.close()
+            except (OSError, ValueError, KeyboardInterrupt) as exc:
+                runner.cleanup_active = True
+                runner.record(Result("serial close", "", "INCONCLUSIVE", str(exc)))
+    code = write_report(report_path, runner, evidence)
+    try:
+        evidence.close()
+    except OSError as exc:
+        print(f"Could not remove HIL reservation lock; preserve the completed evidence: {exc}", file=sys.stderr)
+    return code
 
 
 if __name__ == "__main__":

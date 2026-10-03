@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- HIL operation results must match both token and final status. Expected
+  disconnect errors cannot hide unrelated errors or incomplete responses.
+- Preserve HIL evidence for serial setup failures, bound startup/response
+  buffering, and prevent concurrent runs from overwriting a report.
 - Generate the documentation landing page and guides without broken local links.
   Keep private members and vendor source out of the generated public HTML.
 - Select the root README explicitly so Doxygen 1.9.x does not treat every guide

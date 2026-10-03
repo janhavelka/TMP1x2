@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import types
 import unittest
 from unittest import mock
 
@@ -111,6 +112,219 @@ class ProcessSerial:
 
 
 class ParserTests(unittest.TestCase):
+    def test_unrelated_ok_cannot_certify_matching_operation_status(self):
+        stale = "Operation result: token=4 kind=CONFIGURE elapsed=0 ms write-attempted=yes\n[I] OK detail=0\n"
+        output = stale + operation().replace("[I] OK detail=0", "[I] IN_PROGRESS detail=0")
+        self.assertFalse(hil.response_complete("extended 1", output))
+        self.assertEqual("INCONCLUSIVE", hil.classify("extended 1", output)[0])
+
+    def test_stop_rejects_unverified_full_test_restoration(self):
+        output = ("Configuration test cancelled; scheduling restoration of the captured profile.\n"
+                  "Diagnostic summary: cancelled pass=0 fail=0 skip=0\n"
+                  "Baseline restoration: not verified; run begin to retry the captured profile\n> ")
+        self.assertEqual("FAIL", hil.classify("stop", output)[0])
+        output = "Diagnostic summary: cancelled pass=0 fail=1 skip=0\n> "
+        self.assertEqual("FAIL", hil.classify("stop", output)[0])
+
+    def test_expected_fault_must_be_complete_and_only_error(self):
+        result = hil.Result("read", "read", "FAIL", "I2C_TIMEOUT", "[E] I2C_TIMEOUT detail=0\n> ")
+        self.assertTrue(hil.expected_error(result, hil.TRANSPORT_ERRORS))
+        result.output = "[E] I2C_TIMEOUT detail=0\n[E] CONFIG_MISMATCH detail=0\n> "
+        self.assertFalse(hil.expected_error(result, hil.TRANSPORT_ERRORS))
+        result.output = "[E] I2C_TIMEOUT detail=0"
+        self.assertFalse(hil.expected_error(result, hil.TRANSPORT_ERRORS))
+
+    def test_boot_output_limit_preserves_partial_live_evidence(self):
+        stream = io.BytesIO()
+        session = hil.SerialSession(FakeSerial(b"first\n", b"overflow"), 1, 1, Clock(), stream)
+        with mock.patch.object(hil, "MAX_RESPONSE_BYTES", 8), self.assertRaises(OSError):
+            session.capture_boot(1)
+        self.assertIn(b"first\n", stream.getvalue())
+        self.assertIn("first\n", session.transcript[0])
+
+    def test_response_limit_preserves_partial_output_without_accepting_trailing_ok(self):
+        stream = io.BytesIO()
+        session = hil.SerialSession(FakeSerial(b"prefix", b"[I] OK detail=0\n> "), 1, 1, Clock(), stream)
+        with mock.patch.object(hil, "MAX_RESPONSE_BYTES", 8):
+            result = session.command("verify")
+        self.assertEqual("INCONCLUSIVE", result.outcome)
+        self.assertEqual("prefix", result.output)
+        self.assertIn(b"[I] OK detail=0", stream.getvalue())
+
+    def test_interrupted_command_retains_partial_output(self):
+        serial = FakeSerial(b"[I] IN_PROGRESS detail=0\n")
+        original = serial.read
+        def interrupt(size):
+            if serial.chunks:
+                return original(size)
+            raise KeyboardInterrupt()
+        serial.read = interrupt
+        result = hil.SerialSession(serial, 1, 1, Clock()).command("extended 1")
+        self.assertEqual("INCONCLUSIVE", result.outcome)
+        self.assertIn("IN_PROGRESS", result.output)
+        self.assertEqual("operator interrupted", result.reason)
+
+    def test_deadline_bounds_underlying_read_and_write_timeout(self):
+        serial = FakeSerial(b"[I] OK detail=0\n> ")
+        serial.timeout, serial.write_timeout = 5.0, 5.0
+        session = hil.SerialSession(serial, 5, 120, Clock())
+        result = session.command("verify", timeout_s=0.04)
+        self.assertEqual("PASS", result.outcome)
+        self.assertLessEqual(serial.timeout, 0.04)
+        self.assertLessEqual(serial.write_timeout, 0.04)
+        prior = serial.written
+        self.assertEqual("INCONCLUSIVE", session.command("verify", timeout_s=0).outcome)
+        self.assertEqual(prior, serial.written)
+
+    def test_unfinished_stream_is_not_reparsed_for_every_chunk(self):
+        serial = FakeSerial(*([b"noise\n"] * 20), b"[I] OK detail=0\n> ")
+        with mock.patch.object(hil, "response_complete", wraps=hil.response_complete) as complete:
+            result = hil.SerialSession(serial, 5, 5, Clock()).command("verify")
+        self.assertEqual("PASS", result.outcome)
+        self.assertEqual(1, complete.call_count)
+
+    def test_memory_retention_keeps_latest_response_and_full_live_transcript(self):
+        stream = io.BytesIO()
+        serial = FakeSerial(*([b"[I] OK detail=0\n> "] * 5))
+        session = hil.SerialSession(serial, 5, 5, Clock(), stream)
+        runner = hil.Runner(session, hil.parse_args(["--dry-run"]))
+        with mock.patch.object(hil, "MAX_RETAINED_CHARS", 50), contextlib.redirect_stdout(io.StringIO()):
+            for _ in range(5):
+                runner.command("verify")
+        self.assertLessEqual(session.retained_chars, 50)
+        self.assertLessEqual(runner.retained_chars, 50)
+        self.assertEqual(5, stream.getvalue().count(b"[I] OK detail=0"))
+        self.assertTrue(runner.results[-1].output)
+        self.assertEqual("", runner.results[0].output)
+
+    def test_result_limit_stops_suites_without_blocking_cleanup(self):
+        session = hil.SerialSession(FakeSerial(), 1, 1)
+        runner = hil.Runner(session, hil.parse_args(["--dry-run"]))
+        with mock.patch.object(hil, "MAX_RESULTS", 1), contextlib.redirect_stdout(io.StringIO()):
+            runner.record(hil.Result("first", "", "PASS", "ok"))
+            with self.assertRaises(hil.CheckError):
+                runner.record(hil.Result("second", "", "PASS", "ok"))
+            runner.cleanup_active = True
+            runner.record(hil.Result("cleanup", "", "PASS", "ok"))
+        self.assertEqual("INCONCLUSIVE", runner.results[1].outcome)
+        self.assertEqual("cleanup", runner.results[-1].check)
+
+    def test_malformed_threshold_baseline_is_rejected(self):
+        for value in ("200.0000", "9" * 400 + ".0000"):
+            with self.assertRaises(hil.CheckError):
+                hil.parse_settings(SETTINGS.replace("75.0000", value))
+
+    def test_transcript_failure_marks_run_inconclusive_but_allows_cleanup(self):
+        stream = mock.Mock()
+        stream.write.side_effect = OSError("disk full")
+        session = hil.SerialSession(FakeSerial(b"[I] OK detail=0\n> ", b"[I] OK detail=0\n> "), 1, 1, Clock(), stream)
+        runner = hil.Runner(session, hil.parse_args(["--dry-run"]))
+        with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(hil.CheckError):
+                runner.command("verify")
+            runner.cleanup_active = True
+            self.assertEqual("PASS", runner.command("verify").outcome)
+        self.assertEqual("INCONCLUSIVE", runner.results[0].outcome)
+
+    def test_main_setup_failures_create_json_and_transcript(self):
+        cases = {
+            "missing pyserial": None,
+            "constructor": types.SimpleNamespace(Serial=mock.Mock(side_effect=ValueError("unsupported baud"))),
+            "open": types.SimpleNamespace(Serial=mock.Mock(return_value=mock.Mock(open=mock.Mock(side_effect=OSError("port unavailable"))))),
+        }
+        for name, serial in cases.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "report.json"
+                args = ["--port", "fake", "--model", "tmp102", "--address", "0x48", "--report", str(path)]
+                with mock.patch.dict(sys.modules, {"serial": serial}), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    self.assertEqual(2, hil.main(args))
+                report = json.loads(path.read_text())
+                self.assertEqual("INCONCLUSIVE", report["outcome"])
+                self.assertFalse(report["hardware_run"])
+                self.assertEqual("serial setup", report["results"][0]["check"])
+                self.assertTrue(path.with_suffix(".txt").exists())
+                self.assertFalse(path.with_suffix(".json.lock").exists())
+
+    def test_serial_close_failure_is_recorded_instead_of_losing_report(self):
+        connection = FakeSerial()
+        connection.open = mock.Mock()
+        connection.close = mock.Mock(side_effect=OSError("close failed"))
+        serial = types.SimpleNamespace(Serial=mock.Mock(return_value=connection))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "report.json"
+            with mock.patch.dict(sys.modules, {"serial": serial}), mock.patch.object(hil.SerialSession, "capture_boot"), mock.patch.object(hil.Runner, "run"), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(2, hil.main(["--port", "fake", "--model", "tmp102", "--address", "0x48", "--report", str(path)]))
+            report = json.loads(path.read_text())
+            self.assertEqual("serial close", report["results"][0]["check"])
+
+    def test_transcript_close_failure_has_inconclusive_json_and_exit(self):
+        class CloseFails:
+            def __init__(self, stream):
+                self.stream = stream
+            def write(self, data):
+                return self.stream.write(data)
+            def flush(self):
+                self.stream.flush()
+            def close(self):
+                self.stream.close()
+                raise OSError("delayed filesystem failure")
+        connection = FakeSerial()
+        connection.open, connection.close = mock.Mock(), mock.Mock()
+        serial = types.SimpleNamespace(Serial=mock.Mock(return_value=connection))
+        original = hil.EvidenceFiles
+        def reserve(path, args):
+            files = original(path, args)
+            files.transcript = CloseFails(files.transcript)
+            return files
+        def passed(runner):
+            runner.record(hil.Result("test check", "", "PASS", "ok"))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "report.json"
+            with mock.patch.dict(sys.modules, {"serial": serial}), mock.patch.object(hil, "EvidenceFiles", side_effect=reserve), mock.patch.object(hil.SerialSession, "capture_boot"), mock.patch.object(hil.Runner, "run", passed), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(2, hil.main(["--port", "fake", "--model", "tmp102", "--address", "0x48", "--report", str(path)]))
+            report = json.loads(path.read_text())
+            self.assertEqual("INCONCLUSIVE", report["outcome"])
+            self.assertEqual("transcript close", report["results"][-1]["check"])
+
+    def test_evidence_reservation_prevents_overwrite_and_concurrent_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "report.json"
+            files = hil.EvidenceFiles(path, hil.parse_args(["--dry-run"]))
+            original = path.read_bytes()
+            self.assertIsNone(json.loads(original)["hardware_run"])
+            try:
+                with self.assertRaises(FileExistsError):
+                    hil.EvidenceFiles(path, hil.parse_args(["--dry-run"]))
+                self.assertEqual(original, path.read_bytes())
+                self.assertTrue(path.with_suffix(".json.lock").exists())
+            finally:
+                files.close()
+            with self.assertRaises(FileExistsError):
+                hil.EvidenceFiles(path, hil.parse_args(["--dry-run"]))
+            self.assertEqual(original, path.read_bytes())
+
+    def test_bad_evidence_path_never_opens_serial(self):
+        serial = types.SimpleNamespace(Serial=mock.Mock())
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory) / "not-a-directory"
+            parent.write_text("preserve")
+            with mock.patch.dict(sys.modules, {"serial": serial}), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(2, hil.main(["--port", "fake", "--model", "tmp102", "--address", "0x48", "--report", str(parent / "report.json")]))
+            serial.Serial.assert_not_called()
+            self.assertEqual("preserve", parent.read_text())
+
+    def test_json_finalization_failure_preserves_initial_report_and_transcript(self):
+        runner = hil.Runner(hil.SerialSession(FakeSerial(), 1, 1), hil.parse_args(["--dry-run"]))
+        runner.results = [hil.Result("some check", "", "PASS", "ok")]
+        runner.session.transcript = ["captured bytes"]
+        with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            path = Path(directory) / "report.json"
+            with mock.patch.object(hil.os, "replace", side_effect=OSError("disk full")):
+                self.assertEqual(2, hil.write_report(path, runner))
+            self.assertEqual("INCONCLUSIVE", json.loads(path.read_text())["outcome"])
+            self.assertIn("captured bytes", path.with_suffix(".txt").read_text())
+            self.assertEqual([], list(Path(directory).glob("*.tmp")))
+
     def test_start_prompt_and_wrong_token_cannot_finish_operation(self):
         output = operation()
         start = output.split("Operation result:")[0]

@@ -1,5 +1,20 @@
 # Validation results
 
+## 2026-10-03 HIL runner error handling review
+
+All 44 Python runner tests passed, including the compiled shared CLI fixture.
+The full 11-entry CTest suite also passed. The new cases cover unrelated operation
+results, unverified cancellation restoration, mixed errors, partial startup and
+command output, deadlines, bounded memory, report reservation, and serial or file
+failures during setup and finalization. A failed transcript close cannot leave a
+PASS report. Dry-run still opens no serial port and produces no hardware result.
+
+Commands: `python tools/test_hil_tmp1x2_runner.py --cli-fixture
+build-portable-audit/tmp1x2_cli_tests.exe` and
+`ctest --test-dir build-portable-audit --output-on-failure`. These are host tests;
+physical execution remains pending. Updated limits and report recovery are in the
+[runner guide](hil-runner.md).
+
 ## 2026-10-03 documentation and test procedure review
 
 - Strict C++17 host build and all 11 CTest entries passed. The new documentation

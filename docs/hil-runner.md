@@ -45,8 +45,8 @@ as hardware validation. No physical TMP1x2 run is claimed by this change.
    boards despite the runner setting DTR/RTS inactive before opening; the captured
    baseline is the profile observed **after** connection and startup.
 
-Install the only hardware dependency in the Python environment used for the
-runner, not in a second PlatformIO Core:
+Use Python 3.10 or newer. Install the only hardware dependency in the Python
+environment used for the runner, not in a second PlatformIO Core:
 
 ```powershell
 python -m pip install pyserial
@@ -100,6 +100,13 @@ per ordinary command and 120 seconds for a full diagnostic or finite run. Increa
 plus transfer/conversion time). Missing, truncated, malformed or unsupported
 responses are INCONCLUSIVE. No retry silently changes a failed check to success.
 
+Startup capture and each command response are limited to 8 MiB. Reaching this
+limit stops that check as INCONCLUSIVE and still allows cleanup. The runner
+accepts at most 32 suite selections and stops after 10,000 recorded checks, with
+room reserved for cleanup. Each configurable time window is at most 86,400
+seconds. Disconnect polling and retained one-shot polling use the time remaining
+in their outer window as the command deadline.
+
 Mutating suites save the original desired profile. In `finally`, cleanup sends
 one `stop`, verifies that owner work is idle, and consumes any retained manual
 one-shot within a bounded window. It then recovers and restores all settings with
@@ -119,11 +126,28 @@ Health totals, cached samples, conversion history and interrupt latch history
 are not restored: this is desired configuration restoration, not time reversal.
 
 Each run creates a timestamped `.json` report and adjacent `.txt` transcript under
-`hil_logs/` (ignored by git), or a new path selected by `--report`. Existing evidence
-is not overwritten. The JSON includes source commit/dirty status, firmware
+`hil_logs/` (ignored by git), or a new path selected by `--report`. Both paths are
+reserved before opening the serial port; existing evidence is not overwritten.
+A `.json.lock` file prevents two runner processes from claiming the same report.
+After an interrupted process, keep the partial evidence and choose a new report
+path. The JSON includes source commit/dirty status, firmware
 version response, board/part/operator notes, selected suite outcomes, captured
 profile, every command's response/duration/outcome, restoration status and manual
-gates left `NOT_RUN`. The raw transcript retains ANSI bytes and startup output.
+gates left `NOT_RUN`. The raw transcript is written during the run and retains
+ANSI bytes and startup output. An initial INCONCLUSIVE report remains if the
+process stops before finalization; its `hardware_run` is `null` because an
+interrupted connection state is unknown. A completed setup-failure report uses
+`false`. The final JSON replaces the initial report atomically.
+
+The JSON retains up to 16,777,216 characters of command output. Older output
+beyond that limit is removed from JSON with a note pointing to the full transcript;
+check outcomes and reasons remain. Serial setup failures are recorded even when
+the port never opens. Transcript write or close failures stop normal checks,
+allow cleanup, and cannot produce a successful exit. A stale reservation lock
+after a completed report produces a warning and does not change the test result;
+choose a new report path for the next run. For an evidence write failure,
+preserve the available files and console output when the runner cannot finalize
+the report.
 
 | Outcome | Meaning |
 | --- | --- |
@@ -154,3 +178,5 @@ The native fixture reuses the existing CLI register model. It validates actual
 shared CLI output, reordered suites, cancellation after a write, retained
 shutdown one-shots and restoration. It does not emulate board electrical behavior
 or physical ALERT timing and never creates hardware PASS evidence.
+See the [testing guide](testing.md) for generator-specific executable paths and
+the full host, framework and CI procedures.
