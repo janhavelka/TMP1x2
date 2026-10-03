@@ -1,9 +1,25 @@
 PROJECT_NAME           = "TMP1x2"
 PROJECT_NUMBER         = "1.0.0"
 OUTPUT_DIRECTORY       = build/doxygen
-INPUT                  = include README.md
-RECURSIVE              = YES
+INPUT                  = include/TMP1x2 README.md CHANGELOG.md docs examples/README.md docs/reference/README.md
+FILE_PATTERNS          = *.h *.md
+# Scan only the public include directory and top-level guides. Vendor reference
+# sources and generated HTML are not inputs to this API documentation.
+RECURSIVE              = NO
+USE_MDFILE_AS_MAINPAGE  = README.md
+MARKDOWN_SUPPORT       = YES
 GENERATE_HTML          = YES
 GENERATE_LATEX         = NO
+GENERATE_XML           = NO
 EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_PRIV_VIRTUAL   = NO
+# Namespace constexpr register/version constants are part of the public API.
+EXTRACT_STATIC         = YES
+EXTRACT_LOCAL_CLASSES  = NO
+SOURCE_BROWSER         = NO
+VERBATIM_HEADERS       = NO
+INLINE_SOURCES         = NO
+HAVE_DOT               = NO
+WARN_AS_ERROR          = YES
 QUIET                  = YES

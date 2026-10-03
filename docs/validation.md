@@ -1,5 +1,24 @@
 # Validation results
 
+## 2026-10-03 documentation and test procedure review
+
+- Strict C++17 host build and all 11 CTest entries passed. The new documentation
+  checker entry passed all 13 regressions without requiring Doxygen.
+- Doxygen 1.13.2 generated 107 HTML pages. Warning, local-link, public API and
+  private-member checks passed. Vendor source and private XML are not published.
+- Release metadata and framework contract checks passed. The isolated version
+  test now also checks the Doxygen version after regeneration.
+- The release archive contained 44 files; the isolated renamed consumer compiled,
+  linked and ran. All 34 reference hashes matched. Only the reference index and
+  its recorded checksum changed; TI source artifacts stayed unchanged.
+- [CI for commit 781f368](https://github.com/janhavelka/TMP1x2/actions/runs/37145812239)
+  passed Linux ASan/UBSan, Arduino S2/S3, the package consumer, and all six native
+  ESP-IDF 5.3.2/5.5.1/6.0.1 target builds. This run covers the preceding driver/HIL
+  work; the documentation CI job was added afterward.
+
+Local commands and tools are in the [testing guide](testing.md). No public header
+or framework adapter changed in this documentation block. No physical HIL was run.
+
 ## 2026-10-03 pre-HIL audit
 
 Windows host, GCC 15.1.0 and Python 3.12.10. The managed PlatformIO installation

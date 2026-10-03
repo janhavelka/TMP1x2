@@ -34,6 +34,7 @@ class VersionSyncTests(unittest.TestCase):
             stale = run("check")
             self.assertEqual(stale.returncode, 1, stale.stdout + stale.stderr)
             self.assertIn("CMakeLists.txt", stale.stdout)
+            self.assertIn("Doxyfile", stale.stdout)
             synced = run("sync")
             self.assertEqual(synced.returncode, 0, synced.stdout + synced.stderr)
             current = run("check")
@@ -44,6 +45,8 @@ class VersionSyncTests(unittest.TestCase):
                           (root / "idf_component.yml").read_text(encoding="utf-8"))
             self.assertIn('#define TMP1X2_VERSION_STRING "2.7.13"',
                           (root / "include/TMP1x2/Version.h").read_text(encoding="utf-8"))
+            self.assertRegex((root / "Doxyfile").read_text(encoding="utf-8"),
+                             r'(?m)^PROJECT_NUMBER\s*=\s*"2\.7\.13"\s*$')
 
 
 if __name__ == "__main__":

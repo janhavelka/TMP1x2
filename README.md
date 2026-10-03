@@ -32,6 +32,15 @@ Use synchronous calls for a simple application. After filling the transport
 callbacks in `Config`, initialization and reading need no scheduler:
 
 ```cpp
+#include <TMP1x2/TMP1x2.h>
+
+TMP1x2::Config config;
+config.i2cWrite = applicationWrite;
+config.i2cWriteRead = applicationWriteRead;
+config.i2cUser = &applicationBus;
+config.model = TMP1x2::Model::TMP112; // select the fitted part explicitly
+config.i2cAddress = 0x48;
+
 TMP1x2::TMP1x2 sensor;
 auto status = sensor.begin(config);
 if (status.ok()) {
@@ -101,7 +110,8 @@ specified operating range or accuracy.
 
 ## Build and test
 
-Native, with no framework or third-party test dependency:
+Use a C++17 compiler, CMake 3.16 or newer, and Python 3.10 or newer for the
+test tools. Native tests need no framework or third-party Python package:
 
 ```sh
 cmake -S . -B build -DTMP1X2_BUILD_TESTS=ON
@@ -109,6 +119,11 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 python tools/check_contracts.py
 ```
+
+The [testing guide](docs/testing.md) lists required checks by change type,
+sanitizer commands, package checks and CI coverage. CMake runs the complete
+host suite, including the HIL runner against the compiled shared CLI model.
+PlatformIO's `native` test target runs only the core subset.
 
 A CMake application can use `add_subdirectory(path/to/TMP1x2)` and
 `target_link_libraries(your_application PRIVATE TMP1x2)`. Tests are off by
@@ -143,6 +158,16 @@ The same native IDF example also builds with the existing managed PlatformIO:
 Use this repository as a component through `EXTRA_COMPONENT_DIRS` or under your
 application's `components/` directory. `library.json` is the version source;
 `python scripts/generate_version.py sync` regenerates version metadata.
+
+Generate and check the API documentation with Doxygen installed:
+
+```sh
+python tools/check_doxygen.py
+```
+
+Open `build/doxygen/html/index.html`. This contains the public API, README and
+guides. Documentation tools, tests and reference binaries require a repository
+checkout; they are not included in the PlatformIO release archive.
 
 ## References and validation
 

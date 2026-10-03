@@ -5,14 +5,23 @@ permissions:
 jobs:
   native:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       - run: cmake -S . -B build -DTMP1X2_BUILD_TESTS=ON -DCMAKE_CXX_FLAGS="-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Werror -fsanitize=address,undefined"
       - run: cmake --build build --parallel
       - run: ctest --test-dir build --output-on-failure
       - run: python3 tools/check_contracts.py
+  documentation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - run: sudo apt-get update && sudo apt-get install -y doxygen
+      - run: python3 tools/check_doxygen.py
   arduino:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     strategy:
       matrix:
         target: [esp32s2dev, esp32s3dev]
@@ -27,6 +36,7 @@ jobs:
           python3 tools/check_package.py build/TMP1x2.tar.gz
   esp-idf:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     container: espressif/idf:${{ matrix.version }}
     strategy:
       fail-fast: false

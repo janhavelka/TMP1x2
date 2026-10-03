@@ -44,13 +44,18 @@ else()
     add_executable(tmp1x2_core_no_arduino test/core_no_arduino/compile_main.cpp)
     target_link_libraries(tmp1x2_core_no_arduino PRIVATE TMP1x2)
     add_test(NAME core_no_arduino COMMAND tmp1x2_core_no_arduino)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
     add_test(NAME version_sync
       COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_version_sync.py")
     add_test(NAME idf_component_contract
       COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_idf_component_contract.py")
+    add_test(NAME doxygen_checker
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_check_doxygen.py")
     add_test(NAME hil_runner
       COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_hil_tmp1x2_runner.py"
         --cli-fixture $<TARGET_FILE:tmp1x2_cli_tests>)
+    set_tests_properties(core cli jobs variants helpers bus core_no_arduino
+      version_sync idf_component_contract doxygen_checker PROPERTIES TIMEOUT 120)
+    set_tests_properties(hil_runner PROPERTIES TIMEOUT 180)
   endif()
 endif()

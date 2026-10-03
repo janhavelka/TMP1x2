@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Generate the documentation landing page and guides without broken local links.
+  Keep private members and vendor source out of the generated public HTML.
 - Preserve configuration and temperature-format evidence from tracked word reads,
   including transient EM changes before subsequent recovery.
 - Retain the observed low-threshold verification mismatch when reading the high
@@ -25,6 +27,11 @@
 
 ### Added
 
+- Testing guide with host, sanitizer, framework, package and hardware procedures.
+- Doxygen checks for warnings, local links, public API coverage and private API
+  exclusion, with host regressions and a CI job.
+- Explicit Python 3.10 test prerequisite, CTest/CI time limits and a regression
+  that checks the generated Doxygen version.
 - Standalone CMake integration guidance and framework boundary checks covering
   the shared CLI as well as the core; no application repository is required.
 - Example bus frequency, timeout and Arduino serial baud overrides, with

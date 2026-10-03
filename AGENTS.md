@@ -1,5 +1,9 @@
 # TMP1x2 repository conventions
 
+- Use simple engineering language in documentation, diagnostics and reports.
+- After verification, commit the prompt's changes and push the intended branch
+  after each prompt or logical block. Preserve unrelated work and confirm that
+  the branch is synced with its upstream.
 - Keep public headers under `include/TMP1x2/` and implementation under `src/`.
   The core is standard C++17: no Arduino, ESP-IDF, logging, bus ownership,
   platform delays, dynamic allocation or hidden retries.

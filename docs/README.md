@@ -1,5 +1,6 @@
 # Documentation
 
+- [Testing guide](testing.md): prerequisites, checks by change type, CI and reports.
 - [2026-10-03 pre-HIL audit](audit-2026-10-03.md): datasheet review, defects,
   regression evidence and remaining hardware gates.
 - [Serial HIL runner](hil-runner.md): automated suites, fixture setup and evidence.
@@ -24,3 +25,6 @@
 The repository includes reference PDFs and vendor source snapshots. Binary/vendor
 artifacts are deliberately omitted from the small PlatformIO release package;
 use this repository checkout to access the complete archive.
+
+Run `python tools/check_doxygen.py` from the repository root to generate and
+check the public API and these guides. Open `build/doxygen/html/index.html`.

@@ -6,11 +6,15 @@ Retrieved 2026-09-22. The PDFs are the specification; the notes below are an imp
 
 | Local document | TI revision | Purpose |
 | --- | --- | --- |
-| [tmp102.pdf](tmp102.pdf) | SBOS397I, June 2024 | Catalog TMP102 register interface and limits |
-| [tmp112.pdf](tmp112.pdf) | SBOS473L, July 2024 | Catalog TMP112 A/B/D/N and X2SON variants |
-| [tmp102-q1.pdf](tmp102-q1.pdf) | SBOS702E, September 2021 | Automotive TMP102; slower conversion timing |
-| [tmp112-q1.pdf](tmp112-q1.pdf) | SLOS887H, August 2026 | Automotive TMP112 and TMP112D differences |
-| [sbaa588a.pdf](sbaa588a.pdf) | SBAA588A, January 2025 | TI fixed-point decoding application note |
+| [tmp102.pdf](https://www.ti.com/lit/ds/symlink/tmp102.pdf) | SBOS397I, June 2024 | Catalog TMP102 register interface and limits |
+| [tmp112.pdf](https://www.ti.com/lit/ds/symlink/tmp112.pdf) | SBOS473L, July 2024 | Catalog TMP112 A/B/D/N and X2SON variants |
+| [tmp102-q1.pdf](https://www.ti.com/lit/ds/symlink/tmp102-q1.pdf) | SBOS702E, September 2021 | Automotive TMP102; slower conversion timing |
+| [tmp112-q1.pdf](https://www.ti.com/lit/ds/symlink/tmp112-q1.pdf) | SLOS887H, August 2026 | Automotive TMP112 and TMP112D differences |
+| [sbaa588a.pdf](https://www.ti.com/lit/an/sbaa588a/sbaa588a.pdf) | SBAA588A, January 2025 | TI fixed-point decoding application note |
+
+Links open TI's current documents. The named files in `docs/reference/` are the
+archived revisions listed above; use their recorded hashes when reproducing the
+audit. Vendor binaries are not copied into the generated API documentation.
 
 The `.txt` files are local `pypdf` extractions for searching; PDF tables and diagrams remain authoritative. Later packaging addenda can have newer dates than the actual electrical-specification revision.
 
