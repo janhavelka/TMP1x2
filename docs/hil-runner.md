@@ -142,8 +142,9 @@ interrupted connection state is unknown. A completed setup-failure report uses
 The JSON retains up to 16,777,216 characters of command output. Older output
 beyond that limit is removed from JSON with a note pointing to the full transcript;
 check outcomes and reasons remain. Serial setup failures are recorded even when
-the port never opens. Transcript write or close failures stop normal checks,
-allow cleanup, and cannot produce a successful exit. A stale reservation lock
+the port never opens. A transcript write error stops normal checks and allows
+cleanup. Transcript write or close failures cannot produce a successful exit.
+A stale reservation lock
 after a completed report produces a warning and does not change the test result;
 choose a new report path for the next run. For an evidence write failure,
 preserve the available files and console output when the runner cannot finalize

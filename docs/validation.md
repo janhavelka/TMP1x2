@@ -2,7 +2,7 @@
 
 ## 2026-10-03 HIL runner error handling review
 
-All 44 Python runner tests passed, including the compiled shared CLI fixture.
+All 45 Python runner tests passed, including the compiled shared CLI fixture.
 The full 11-entry CTest suite also passed. The new cases cover unrelated operation
 results, unverified cancellation restoration, mixed errors, partial startup and
 command output, deadlines, bounded memory, report reservation, and serial or file
@@ -14,6 +14,13 @@ build-portable-audit/tmp1x2_cli_tests.exe` and
 `ctest --test-dir build-portable-audit --output-on-failure`. These are host tests;
 physical execution remains pending. Updated limits and report recovery are in the
 [runner guide](hil-runner.md).
+
+The documentation CI job exposed two Doxygen 1.9.8 differences: matching every
+README basename as the main page, and linking to a hidden private nested-class
+section. A qualified main-page path and `HIDE_UNDOC_CLASSES` fix both. Generation
+and the full link/API checks passed using official Doxygen 1.9.8 (109 HTML pages)
+and installed 1.13.2 (107 pages). All 13 checker regressions passed. No missing-link
+exception or public-header change was needed.
 
 ## 2026-10-03 documentation and test procedure review
 

@@ -15,6 +15,9 @@ GENERATE_XML           = NO
 EXTRACT_ALL            = YES
 EXTRACT_PRIVATE        = NO
 EXTRACT_PRIV_VIRTUAL   = NO
+# Avoid dangling nested-class navigation for private types in Doxygen 1.9.8.
+# EXTRACT_ALL keeps every public type visible even without its own comment.
+HIDE_UNDOC_CLASSES     = YES
 # Namespace constexpr register/version constants are part of the public API.
 EXTRACT_STATIC         = YES
 EXTRACT_LOCAL_CLASSES  = NO
