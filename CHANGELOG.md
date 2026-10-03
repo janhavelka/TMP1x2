@@ -6,6 +6,8 @@
 
 - Generate the documentation landing page and guides without broken local links.
   Keep private members and vendor source out of the generated public HTML.
+- Select the root README explicitly so Doxygen 1.9.x does not treat every guide
+  named README as another main page.
 - Preserve configuration and temperature-format evidence from tracked word reads,
   including transient EM changes before subsequent recovery.
 - Retain the observed low-threshold verification mismatch when reading the high

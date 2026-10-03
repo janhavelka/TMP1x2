@@ -6,7 +6,8 @@ FILE_PATTERNS          = *.h *.md
 # Scan only the public include directory and top-level guides. Vendor reference
 # sources and generated HTML are not inputs to this API documentation.
 RECURSIVE              = NO
-USE_MDFILE_AS_MAINPAGE  = README.md
+# A qualified path avoids matching every README.md basename in Doxygen 1.9.x.
+USE_MDFILE_AS_MAINPAGE  = ./README.md
 MARKDOWN_SUPPORT       = YES
 GENERATE_HTML          = YES
 GENERATE_LATEX         = NO
