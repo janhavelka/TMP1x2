@@ -1,8 +1,28 @@
 # Diagnostic examples
 
+The [serial HIL runner](../docs/hil-runner.md) drives either example and saves
+JSON results and a transcript. Build and flash the chosen example separately,
+configure its model/address, and close the serial monitor before running it.
+
 Both examples run the same framework-neutral command processor in `common/Tmp1x2Cli*.cpp`, split into command dispatch, diagnostics and output. Arduino and native ESP-IDF therefore have the same commands, aliases, help layout, ANSI colors, finite sampling workflows and parsing behavior. These are bring-up diagnostics, not a multitask bus-manager implementation.
 
 `common/BoardConfig.h` selects SDA 8, SCL 9, 400 kHz and a 50 ms transaction timeout. Override `TMP1X2_I2C_SDA`/`TMP1X2_I2C_SCL` or edit this example-only file for your hardware. Optional `TMP1X2_ALERT_PIN` defaults to -1 (disabled); configure an input with appropriate external pull-up for physical ALERT diagnostics. Fit appropriate external I2C pull-ups. Platform pin setup and handles stay in the examples.
+
+Set `TMP1X2_MODEL` (`0` TMP102, `1` TMP112, `2` TMP112D address-select) and
+`TMP1X2_I2C_ADDRESS` before flashing: startup initializes that target before the
+CLI accepts commands. The default address is `0x48` for models 0/1 and `0x40`
+for model 2. For a TMP112 strapped to `0x49`, add `-DTMP1X2_MODEL=1` and
+`-DTMP1X2_I2C_ADDRESS=0x49` to the selected environment's `build_flags`, or edit
+the shared header. Both Arduino and native IDF use these settings. Invalid
+model/address or unsupported ALERT combinations fail compilation.
+
+`TMP1X2_I2C_FREQUENCY_HZ` selects ordinary I2C up to 400000 Hz (default 400000);
+these example adapters do not issue the high-speed master code.
+`TMP1X2_I2C_TIMEOUT_MS` defaults to 50 and accepts 1..65535 ms to fit both
+adapters. The core's callback timeout contract remains independent of this
+example-specific limit. `TMP1X2_SERIAL_BAUD` defaults to 115200 for Arduino;
+native ESP-IDF's console baud and routing are selected in its SDK configuration.
+Match the monitor or HIL runner's baud to the firmware console.
 
 ## Arduino / PlatformIO
 

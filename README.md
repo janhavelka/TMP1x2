@@ -1,10 +1,10 @@
 # TMP1x2
 
 Framework-neutral C++17 driver for TI **TMP102 and TMP112** temperature sensors.
-The public API, transport callbacks, four-state health model, repository layout
-and colored diagnostic CLI follow the neighboring OPT4001 library, with ADS1115
-as the four-register protocol reference. See the full
-[library comparison](docs/library-comparison.md).
+The core depends only on the C++17 standard library. Applications supply bounded
+I2C callbacks and own their bus, pins, clock and scheduling. Arduino-ESP32 and
+native ESP-IDF adapters live in the examples; other platforms can supply the
+same callbacks without depending on either framework.
 
 - Signed 12-bit normal and 13-bit extended temperatures, 0.0625 C per count.
 - Continuous rates of 0.25, 1, 4 and 8 Hz; shutdown and polled one-shot conversion.
@@ -27,6 +27,25 @@ API conventions to implemented functions and test commands. See also
 [field helpers](docs/field-helpers.md) and [shared-bus operations](docs/bus-operations.md).
 
 ## Integration
+
+Use synchronous calls for a simple application. After filling the transport
+callbacks in `Config`, initialization and reading need no scheduler:
+
+```cpp
+TMP1x2::TMP1x2 sensor;
+auto status = sensor.begin(config);
+if (status.ok()) {
+  float celsius = 0;
+  status = sensor.readTemperature(celsius);
+  if (status.ok()) consumeTemperature(celsius);
+}
+```
+
+This reads the latest register, which can still be zero before the first
+conversion after power-up. Use shutdown plus `readBlocking` (with a clock hook),
+or the cooperative read operation below, when a completed new conversion is
+required. Cooperative operations are optional and suit applications that need
+to limit bus work per loop or task turn:
 
 ```cpp
 #include <TMP1x2/TMP1x2.h>
@@ -91,6 +110,10 @@ ctest --test-dir build --output-on-failure
 python tools/check_contracts.py
 ```
 
+A CMake application can use `add_subdirectory(path/to/TMP1x2)` and
+`target_link_libraries(your_application PRIVATE TMP1x2)`. Tests are off by
+default; the library itself requires no Python, SDK, RTOS or other repository.
+
 On Windows with MinGW, add `-G "MinGW Makefiles"` to the configure command.
 The existing VS Code-managed PlatformIO installation is used through:
 
@@ -133,3 +156,8 @@ The [2026-09-26 audit](docs/audit-2026-09-26.md) records sibling-library parity,
 confirmed defects, fixes and remaining design differences.
 The [code organization guide](docs/code-structure.md) maps implementation files
 and their ownership boundaries.
+
+The [2026-10-03 pre-HIL audit](docs/audit-2026-10-03.md) records the latest
+datasheet review, fixes and validation. Use the [serial HIL runner](docs/hil-runner.md)
+with either framework example when hardware is ready. No physical sensor results
+are claimed yet.

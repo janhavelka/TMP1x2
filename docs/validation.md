@@ -1,5 +1,61 @@
 # Validation results
 
+## 2026-10-03 pre-HIL audit
+
+Windows host, GCC 15.1.0 and Python 3.12.10. The managed PlatformIO installation
+was used for every PlatformIO command. Full details and defects are in the
+[audit](audit-2026-10-03.md).
+
+| Check | Result |
+| --- | --- |
+| Strict C++17 CMake build | Passed with `-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Werror` |
+| Standalone CTest | All ten entries passed from a clean build: core, CLI, owner operations, variants, helpers, shared-bus operations, framework-free headers, release metadata, IDF component contract and HIL runner; no external application headers |
+| HIL runner host tests | All 27 passed, including actual shared CLI output, cancellation/retained-conversion cleanup, reordered suites and coherent format-scale errors |
+| Example startup configuration | All 12 compiler checks behaved as expected for supported selections, model-aware default addresses, invalid/narrowing addresses, and unsupported/conflicting ALERT assignments |
+| New regression checks against original source | Both dirty-evidence assertions failed against copies of the original HEAD implementation and passed with the fixes |
+| PlatformIO native | All 21 core test groups passed |
+| Framework-free PlatformIO compile/link | Passed |
+| Arduino ESP32-S3 / ESP32-S2 | Both full firmware links and binary generation passed, Arduino 3.3.11 / pioarduino 55.03.311 |
+| Native ESP-IDF ESP32-S3 / ESP32-S2 | Both full application/component links and binary generation passed, ESP-IDF 5.5.5 through managed PlatformIO |
+| Release metadata / framework boundaries | Passed for core and shared CLI; eight temporary positive/negative checker fixtures also passed |
+| PlatformIO release package | Required payload and exclusions checked; isolated renamed CMake consumer compiled, linked and ran |
+| TI archive | All 34 recorded checksums matched; source artifacts unchanged |
+| Physical HIL / sensor accuracy / ALERT | Not run; hardware validation remains pending |
+
+The expanded native tests cover partial first-byte writes as well as fully
+accepted/rejected failures, both EM directions, threshold replay, stalled OS
+completion, tracked word observations, and interrupted threshold verification.
+Variant tests also verify the internal thermostat register controls remain
+available on TMP112D ADD0 X2SON despite its lack of a physical ALERT output.
+The HIL host suite exercises the actual shared CLI rendering using a simulated
+sensor; its fixture is not a physical HIL result. All native test sources and
+fixtures are contained in this repository.
+
+The standalone validation logs are under ignored `build-portable-audit/`
+(`arduino.log`, `idf.log`, `pio-native.log`, `core-no-framework.log`). All ten
+CTest entries are recorded in that build's `Testing/Temporary/LastTest.log`.
+No board was flashed. Linux sanitizer and remote CI jobs were not run locally.
+The startup configuration compiler matrix is retained in
+`build-oct-audit/check-board-config.py`; it is a local check, not a separate CI job.
+
+```powershell
+cmake -S . -B build-portable-audit -G Ninja -DTMP1X2_BUILD_TESTS=ON `
+  '-DCMAKE_CXX_FLAGS=-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Werror'
+cmake --build build-portable-audit --parallel
+ctest --test-dir build-portable-audit --output-on-failure
+python tools/check_contracts.py
+.\scripts\pio.cmd test -e native
+.\scripts\pio.cmd run -e native_core_no_arduino -e esp32s3dev -e esp32s2dev
+.\scripts\pio.cmd run --project-dir examples/esp_idf/basic -e esp32s3 -e esp32s2
+.\scripts\pio.cmd pkg pack -o build-portable-audit/TMP1x2.tar.gz .
+python tools/check_package.py build-portable-audit/TMP1x2.tar.gz --generator Ninja
+```
+
+The same ten CTest entries run on every supported native host, including the
+actual-CLI parser fixture. No application checkout or board SDK is required.
+
+## Earlier validation
+
 Local validation on 2026-09-26 after the [cross-library audit](audit-2026-09-26.md).
 Windows host, GCC 15.1.0, Python 3.12.10, managed PlatformIO Core 6.1.19.
 

@@ -21,7 +21,9 @@ Re-audited on 2026-09-26 in the sibling `Projects/` directory. The inventory cov
 | SSD1315 | OLED command/data streams | Cooperative transfer budgeting; no measurement/register analogue |
 | TCA9548A | I2C switch control byte | Bus ownership discipline; different chip protocol |
 
-Other top-level standalone libraries were classified as non-I2C: ADS1261_ESP32 and MAX31865 (SPI); AT21CS11 (single wire); EE871-E2 (E2); AsyncSD (SD); SHZK-PT, VibWire-108 and VTN4xx (serial codecs); SIM7080G-Core (UART modem); StatusLED (LED/RMT); SystemChrono (time). LGClimateLink is a separate climate-control protocol project. ESP32_Interfaces is an interface application with a RuntimeProbe helper, and NextionNX3224T028_UART is a display application. Remaining top-level entries are applications, board/design projects, this repository, or TunnelMonitor archive/worktree copies.
+Other peripheral protocols and application/board projects were outside the I2C
+comparison. This inventory is background design research; none of these
+repositories is a build or runtime dependency of TMP1x2.
 
 ## Chosen conventions
 

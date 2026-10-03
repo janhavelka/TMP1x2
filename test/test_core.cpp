@@ -20,6 +20,8 @@ struct Bus {
   unsigned corruptAt = 0;
   bool failAll = false;
   bool acceptFailedWrite = false;
+  bool acceptFailedMsb = false;
+  bool conversionCompletes = true;
   bool clockAdvances = true;
   uint32_t ms = 0;
   uint32_t shotAt = 0;
@@ -54,6 +56,11 @@ struct Bus {
       return t::Status::Error(t::Err::INVALID_PARAM, "invalid framing");
     if (!b.failed() || b.acceptFailedWrite)
       b.store(tx[0], static_cast<uint16_t>((static_cast<uint16_t>(tx[1]) << 8U) | tx[2]));
+    else if (b.acceptFailedMsb)
+      // TI updates registers byte by byte. A failed transfer can apply the
+      // MSB (including OS/SD) while preserving the old LSB (including EM).
+      b.store(tx[0], static_cast<uint16_t>((static_cast<uint16_t>(tx[1]) << 8U) |
+                                         (b.regs[tx[0]] & 0x00FFU)));
     return b.failed() ? b.result() : t::Status::Ok();
   }
   static t::Status read(uint8_t addr, const uint8_t* tx, size_t len, uint8_t* rx, size_t n, uint32_t timeout, void* p) {
@@ -61,7 +68,7 @@ struct Bus {
     if (addr < 0x48 || addr > 0x4B || len != 1 || n != 2 || tx[0] > 3 || timeout == 0)
       return t::Status::Error(t::Err::INVALID_PARAM, "invalid framing");
     if (b.failed()) { rx[0] = 0xFF; rx[1] = 0xFF; return b.result(); }
-    if (b.shot && static_cast<uint32_t>(b.ms - b.shotAt) >= 35) {
+    if (b.shot && b.conversionCompletes && static_cast<uint32_t>(b.ms - b.shotAt) >= 35) {
       b.shot = false; b.regs[1] |= 0x8000U;
       b.regs[0] = (b.regs[1] & 0x10U) != 0 ? 0x0C81 : 0x1900;
     }
@@ -162,6 +169,49 @@ static void oneShot() {
   CHECK(d.tryRead(s).is(t::Err::MEASUREMENT_NOT_READY));
   CHECK(d.readBlocking(s, 100).ok()); CHECK(s.celsius == 25);
   CHECK(d.readBlocking(s, 1).is(t::Err::TIMEOUT));
+}
+static void conversionRequiresHardwareCompletion() {
+  Bus b; t::TMP1x2 d; auto c = b.config(); c.mode = t::Mode::SHUTDOWN;
+  CHECK(d.begin(c).ok()); b.conversionCompletes = false;
+  CHECK(d.startOneShot().ok()); b.ms += 1000U;
+  t::Sample sample; sample.celsius = 999;
+  const auto failuresBefore = d.totalFailures();
+  CHECK(d.tryRead(sample).is(t::Err::MEASUREMENT_NOT_READY));
+  CHECK(sample.celsius == 999 && d.conversionStarted());
+  CHECK(!d.conversionReady() && !d.hardwareConfigDirty());
+  CHECK(d.totalFailures() == failuresBefore);
+  b.conversionCompletes = true;
+  CHECK(d.tryRead(sample).ok() && sample.freshConversion);
+
+  // Elapsed settling time must not certify a new EM payload either. A readable
+  // CONFIG with OS still busy is a protocol timeout, not a transport failure.
+  b.conversionCompletes = false;
+  CHECK(d.setExtendedMode(true).is(t::Err::TIMEOUT));
+  CHECK(d.hardwareConfigDirty() && d.hardwareConfigDirtyError().is(t::Err::TIMEOUT));
+  CHECK(d.totalFailures() == failuresBefore);
+  sample.celsius = 999;
+  CHECK(d.readSample(sample).is(t::Err::INVALID_CONFIG) && sample.celsius == 999);
+  b.conversionCompletes = true;
+  CHECK(d.recover().ok()); CHECK(d.readSample(sample).ok());
+  CHECK(sample.celsius == 25 && sample.extendedMode);
+}
+static void verificationPreservesMismatchEvidence() {
+  for (unsigned extended = 0; extended < 2; ++extended) {
+    Bus b; t::TMP1x2 d; auto c = b.config(); c.extendedMode = extended != 0;
+    CHECK(d.begin(c).ok());
+    b.regs[2] ^= 0x100U;
+    b.failAt = b.calls + 3U; // CONFIG and changed TLOW succeed, THIGH fails.
+    const auto failuresBefore = d.totalFailures();
+    const auto successesBefore = d.totalSuccess();
+    CHECK(d.verifyConfiguration().is(t::Err::I2C_TIMEOUT));
+    CHECK(d.hardwareConfigDirty());
+    CHECK(d.hardwareConfigDirtyError().is(t::Err::CONFIG_MISMATCH));
+    CHECK(d.hardwareConfigDirtyError().detail == b.regs[2]);
+    CHECK(d.lastError().is(t::Err::I2C_TIMEOUT));
+    CHECK(d.totalFailures() == failuresBefore + 1U);
+    CHECK(d.totalSuccess() == successesBefore + 2U);
+    b.failAt = 0; CHECK(d.recover().ok()); CHECK(!d.hardwareConfigDirty());
+  }
 }
 static void wraparound() {
   Bus b; b.ms = UINT32_MAX - 10U; t::TMP1x2 d; auto c = b.config(); c.mode = t::Mode::SHUTDOWN;
@@ -329,10 +379,12 @@ static void formatFailureMatrix() {
     CHECK(good.setExtendedMode(initialExtended == 0).ok());
     const unsigned count = baseline.calls - before;
     for (unsigned at = 1; at <= count; ++at) {
-      for (unsigned accepted = 0; accepted < 2; ++accepted) {
+      for (unsigned accepted = 0; accepted < 3; ++accepted) {
         Bus b; t::TMP1x2 d; c = b.config();
         c.extendedMode = initialExtended != 0; CHECK(d.begin(c).ok());
-        b.failAt = b.calls + at; b.acceptFailedWrite = accepted != 0;
+        b.failAt = b.calls + at;
+        b.acceptFailedWrite = accepted == 2;
+        b.acceptFailedMsb = accepted == 1;
         CHECK(d.setExtendedMode(initialExtended == 0).is(t::Err::I2C_TIMEOUT));
         CHECK(d.hardwareConfigDirty()); CHECK(d.totalFailures() == 1U);
         b.failAt = 0; CHECK(d.recover().ok());
@@ -341,6 +393,24 @@ static void formatFailureMatrix() {
         CHECK(sample.celsius == 25.0f); CHECK(!b.prematureEmChange);
         CHECK(!d.hardwareConfigDirty());
       }
+    }
+  }
+}
+static void thresholdPartialWriteFailureMatrix() {
+  for (unsigned extended = 0; extended < 2; ++extended) {
+    Bus baseline; t::TMP1x2 good; auto c = baseline.config(); c.extendedMode = extended != 0;
+    CHECK(good.begin(c).ok()); const unsigned before = baseline.calls;
+    CHECK(good.setThresholds(-10.1875f, 30.3125f).ok());
+    const unsigned count = baseline.calls - before;
+    for (unsigned at = 1; at <= count; ++at) {
+      Bus b; t::TMP1x2 d; c = b.config(); c.extendedMode = extended != 0;
+      CHECK(d.begin(c).ok());
+      b.failAt = b.calls + at; b.acceptFailedMsb = true;
+      CHECK(d.setThresholds(-10.1875f, 30.3125f).is(t::Err::I2C_TIMEOUT));
+      CHECK(d.hardwareConfigDirty()); CHECK(d.totalFailures() == 1U);
+      b.failAt = 0; CHECK(d.recover().ok()); CHECK(!d.hardwareConfigDirty());
+      float low = 0, high = 0;
+      CHECK(d.readThresholds(low, high).ok()); CHECK(low == -10.1875f && high == 30.3125f);
     }
   }
 }
@@ -362,7 +432,10 @@ int main() {
     {"observed temperature format recovery", observedTemperatureFormatRecovery},
     {"interrupted format observation", interruptedFormatObservation},
     {"format precondition evidence", formatPreconditionEvidence},
-    {"format transition failure matrix", formatFailureMatrix}};
+    {"format transition failure matrix", formatFailureMatrix},
+    {"threshold partial-byte failure matrix", thresholdPartialWriteFailureMatrix},
+    {"conversion requires hardware completion", conversionRequiresHardwareCompletion},
+    {"verification mismatch evidence", verificationPreservesMismatchEvidence}};
   for (const auto& test : tests) { const int before = failures; test.run(); if (before == failures) std::printf("[PASS] %s\n", test.name); }
   return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

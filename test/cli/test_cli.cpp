@@ -1,6 +1,7 @@
 #include "Tmp1x2Cli.h"
 #include <cstdio>
 #include <cstring>
+#include <iostream>
 #include <string>
 
 struct Fixture {
@@ -109,7 +110,38 @@ struct Fixture {
   }
 };
 #define CHECK(x) do { if (!(x)) { std::printf("CLI check failed line %d: %s\n", __LINE__, #x); return 1; } } while (false)
-int main() {
+int main(int argc, char** argv) {
+  // Exercise the host HIL parser against actual shared CLI rendering. This is
+  // a register model and never constitutes physical HIL evidence.
+  if (argc == 2 && std::strcmp(argv[1], "--hil-fixture") == 0) {
+    Fixture f; tmp1x2_cli::Cli cli;
+    cli.setup(f.platform(), f.config()); f.settle(cli);
+    std::cout << f.output << std::flush; f.output.clear();
+    std::string command;
+    bool automaticTicks = true;
+    while (std::getline(std::cin, command)) {
+      // Model-only scheduler controls for cancellation/pending-shot tests.
+      if (command == "$pause" || command == "$resume") {
+        automaticTicks = command == "$resume";
+        std::cout << "Fixture scheduler updated\n> " << std::flush;
+        continue;
+      }
+      if (command.compare(0, 6, "$tick ") == 0) {
+        unsigned ticks = 0;
+        if (std::sscanf(command.c_str(), "$tick %u", &ticks) != 1 || ticks > 10000U) return 2;
+        for (unsigned i = 0; i < ticks; ++i) { ++f.timeMs; cli.tick(); }
+        std::cout << f.output << "Fixture ticks complete\n> " << std::flush; f.output.clear();
+        continue;
+      }
+      for (char ch : command) cli.feed(ch);
+      cli.feed('\n');
+      std::cout << f.output << std::flush; f.output.clear();
+      if (automaticTicks)
+        for (unsigned i = 0; i < 10000; ++i) { ++f.timeMs; cli.tick(); }
+      std::cout << f.output << std::flush; f.output.clear();
+    }
+    return 0;
+  }
   Fixture f; tmp1x2_cli::Cli cli; auto p = f.platform(); auto c = f.config();
   cli.setup(p, c); CHECK(f.transfers == 0); f.settle(cli); f.output.clear();
   cli.processCommand("help");

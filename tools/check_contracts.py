@@ -7,18 +7,27 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+SOURCE_SUFFIXES = {".h", ".hpp", ".hh", ".hxx", ".c", ".cc", ".cpp", ".cxx"}
+FRAMEWORK_INCLUDE = re.compile(
+    r'^\s*#\s*include\s*[<"](?:Arduino(?:\.h|/)|Wire(?:\.h|/)|'
+    r'esp_|driver/|freertos/|FreeRTOS\.h|sdkconfig\.h)', re.M)
 
 
 def main():
     errors = []
-    for folder in ("include", "src"):
+    # The shared example command processor must stay portable too: platform
+    # adaptation belongs only in the framework-specific application entrypoints.
+    for folder in ("include", "src", "examples/common"):
         for path in (ROOT / folder).rglob("*"):
-            if path.suffix not in (".h", ".cpp"):
+            if path.suffix not in SOURCE_SUFFIXES:
                 continue
             text = path.read_text(encoding="utf-8")
-            if re.search(r"^\s*#\s*include\s*[<\"](?:Arduino|Wire|esp_|driver/|freertos/)", text, re.M):
+            if FRAMEWORK_INCLUDE.search(text):
                 errors.append(f"framework include in {path.relative_to(ROOT)}")
-            code = re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
+            # Ignore diagnostic prose such as "new session" when checking for
+            # operators and calls; string contents are not executable C++.
+            code = re.sub(r"""/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'""",
+                          "", text, flags=re.S)
             if re.search(r"\b(?:delay|malloc|calloc|realloc|printf)\s*\(|\bnew\s+\w|\b(?:Serial|Wire)\s*[.]", code):
                 errors.append(f"allocation/logging/framework call in {path.relative_to(ROOT)}")
     metadata = json.loads((ROOT / "library.json").read_text())

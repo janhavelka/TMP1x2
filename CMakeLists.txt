@@ -49,5 +49,8 @@ else()
       COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_version_sync.py")
     add_test(NAME idf_component_contract
       COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_idf_component_contract.py")
+    add_test(NAME hil_runner
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_hil_tmp1x2_runner.py"
+        --cli-fixture $<TARGET_FILE:tmp1x2_cli_tests>)
   endif()
 endif()

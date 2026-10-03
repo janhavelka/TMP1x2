@@ -26,16 +26,37 @@ all have owner operations. Waiting for conversion never holds the bus lock.
 wrapping 32-bit monotonic millisecond domain. Transport callbacks themselves
 remain bounded synchronous operations.
 
+No scheduler, RTOS or application-specific owner type is required. A simple
+single-threaded loop can use `begin`, typed setters and synchronous reads with
+the same callbacks. The examples provide Arduino-ESP32 and native ESP-IDF
+adapters; other C++17 platforms implement these small callbacks with their own
+bounded I2C API. The shared example CLI is framework-neutral as well.
+
 Validation errors and conversion-not-ready results are distinct from I2C
 failures. Health is passive: READY, DEGRADED, OFFLINE and UNINIT describe observed
 transport behavior. OFFLINE does not prevent an explicit retry. Recovery is
 requested by the application and restores the cached desired settings; it does
 not recover or reset the shared bus.
 
+Preserve the distinction between a transport failure and adapter rejection
+before a transfer starts. Do not report a fabricated I2C failure for a local
+invalid parameter or unavailable transport. If the platform reports a NACK
+without identifying its phase, return `I2C_ERROR` with useful detail rather than
+guessing address versus data NACK. Return OK only after the complete requested
+write/read succeeds. See the example adapters for concrete error mapping.
+
 Raw register writes are diagnostics. They invalidate configuration trust;
 recover the desired profile before relying on typed reads. A failed
 write may have reached hardware, so ambiguous transfer errors also invalidate
 trust. Multi-register updates must not be treated as atomic hardware operations.
+
+Tracked word reads (`readRegister` / `readRegister16`) return successfully read
+words even when their contents differ from the desired settings. Such CONFIG,
+TEMP and threshold observations latch configuration/format uncertainty without
+changing the sample cache or counting a protocol mismatch as an I2C failure.
+`readRegisterRaw` and probes deliberately bypass managed observations as well as
+health. Use `invalidateDeviceState()` when an external writer or reset changes
+hardware outside the tracked API.
 
 Changing extended mode requires monotonic time: an application `nowMs` callback
 for synchronous configuration, or caller-supplied poll timestamps for owner

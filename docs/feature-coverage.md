@@ -94,3 +94,9 @@ with baseline restoration, raw diagnostics and shared-bus maintenance. Details
 and physical side effects are listed in [the example guide](../examples/README.md).
 Host tests validate modeled behavior; the [hardware procedure](hardware-validation.md)
 is still required for electrical timing, ALERT thresholds and sensor accuracy.
+
+The [serial HIL runner](hil-runner.md) automates configuration/readback, format
+transitions, one-shots, finite stress, comparator AL/optional GPIO response and
+guided disconnect/recovery. It records selected checks and omissions explicitly.
+Native tests and the isolated package consumer run without any application
+repository, board configuration, Arduino installation or ESP-IDF SDK.

@@ -78,6 +78,21 @@ int main() {
   const auto calls = bus.calls;
   bool active = true;
   CHECK(!device.readAlertPin(active).ok()); CHECK(active); CHECK(bus.calls == calls); CHECK(bus.gpioCalls == 0);
+  // TMP112D ADD0 X2SON has no physical ALERT pin, but TI SBOS473L sections
+  // 7.3.2.5 and 7.5.3 still expose the internal thermostat and SMBus alert.
+  // Absence of the GPIO must not disable those register-backed controls.
+  CHECK(device.setAlertMode(t::AlertMode::INTERRUPT_MODE).ok());
+  CHECK(device.setAlertPolarity(t::AlertPolarity::ACTIVE_HIGH).ok());
+  CHECK(device.setFaultQueue(t::FaultQueue::FAULTS_6).ok());
+  CHECK(device.setThresholds(-10.25f, 30.5f).ok());
+  CHECK(bus.registers[1] == 0x7EA0U);
+  CHECK(bus.registers[2] == 0xF5C0U && bus.registers[3] == 0x1E80U);
+  t::ConfigurationInfo info;
+  CHECK(device.readConfiguration(info).ok() && info.valid);
+  CHECK(info.alertMode == t::AlertMode::INTERRUPT_MODE);
+  CHECK(info.alertPolarity == t::AlertPolarity::ACTIVE_HIGH);
+  CHECK(info.faultQueue == t::FaultQueue::FAULTS_6);
+  CHECK(!device.hardwareConfigDirty() && bus.gpioCalls == 0);
   device.unbind();
   config = bus.config(t::Model::TMP112, 0x48); config.alertPin = 6;
   CHECK(device.begin(config).ok()); CHECK(device.readAlertPin(active).ok()); CHECK(active);

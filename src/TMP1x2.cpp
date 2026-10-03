@@ -200,7 +200,27 @@ Status TMP1x2::invalidateDeviceState() {
 
 Status TMP1x2::readRegister(uint8_t reg, uint16_t& out) {
   Status status = guard();
-  return status.ok() ? read(reg, out, true) : status;
+  if (!status.ok()) return status;
+  status = read(reg, out, true);
+  if (!status.ok()) return status;
+  // Word diagnostics still return a successfully read word, but a tracked
+  // observation cannot erase evidence needed to trust subsequent samples.
+  if (reg == cmd::REG_CONFIG) {
+    if (!decodeConfiguration(out).valid || (out & cmd::MASK_WRITABLE_CONFIG) !=
+        (packConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG))
+      markConfigurationDirty(Status::Error(Err::CONFIG_MISMATCH,
+          "Observed configuration differs from desired settings", out), out);
+  } else if (reg == cmd::REG_TEMPERATURE) {
+    Sample sample;
+    (void)decodeObservedTemperature(out, sample);
+  } else {
+    uint16_t expected = 0;
+    (void)encodeThreshold(reg == cmd::REG_TLOW ? _config.lowThresholdC : _config.highThresholdC,
+                          _config.extendedMode, expected);
+    if (out != expected)
+      markDirty(Status::Error(Err::CONFIG_MISMATCH, "Observed threshold differs from desired settings", out));
+  }
+  return status;
 }
 
 Status TMP1x2::writeRegister(uint8_t reg, uint16_t value) {

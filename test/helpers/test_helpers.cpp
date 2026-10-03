@@ -352,6 +352,55 @@ static void changedDesiredFormatKeepsPreviousEvidence() {
   }
 }
 
+static void trackedWordObservations() {
+  for (unsigned extended = 0; extended < 2; ++extended) {
+    for (uint8_t reg = 0; reg < 4; ++reg) {
+      Device d; t::TMP1x2 driver; auto config = d.config();
+      config.extendedMode = extended != 0;
+      CHECK(driver.begin(config).ok());
+      t::Sample sample; CHECK(driver.readSample(sample).ok());
+      const auto cached = driver.lastSample();
+      if (reg <= 1) d.store(static_cast<uint16_t>(d.registers[1] ^ 0x10U));
+      else d.registers[reg] ^= 0x100U;
+      const uint16_t expected = d.registers[reg];
+      const auto successes = driver.totalSuccess();
+      const auto failuresBefore = driver.totalFailures();
+      uint16_t raw = 0;
+      CHECK(driver.readRegisterRaw(reg, raw).ok()); CHECK(raw == expected);
+      CHECK(!driver.hardwareConfigDirty()); CHECK(driver.totalSuccess() == successes);
+      CHECK(driver.readRegister16(reg, raw).ok()); CHECK(raw == expected);
+      CHECK(driver.hardwareConfigDirty());
+      CHECK(driver.hardwareConfigDirtyError().is(t::Err::CONFIG_MISMATCH));
+      CHECK(driver.hardwareConfigDirtyError().detail == expected);
+      CHECK(driver.totalSuccess() == successes + 1 && driver.totalFailures() == failuresBefore);
+      CHECK(driver.lastSample().raw == cached.raw && driver.hasSample());
+      sample.celsius = 999;
+      CHECK(driver.readSample(sample).is(t::Err::INVALID_CONFIG)); CHECK(sample.celsius == 999);
+      if (reg <= 1) {
+        // Return EM to the desired setting but retain a payload in the other
+        // format. Matching CONFIG/TEMP markers cannot prove correct decoding.
+        d.store(static_cast<uint16_t>(d.registers[1] ^ 0x10U));
+        d.registers[0] = extended != 0 ? 0x1901 : 0x0C80;
+      }
+      const uint32_t before = d.ms;
+      CHECK(driver.recover().ok()); CHECK(!driver.hardwareConfigDirty());
+      if (reg <= 1) CHECK(static_cast<uint32_t>(d.ms - before) >= 72);
+      CHECK(driver.readSample(sample).ok()); CHECK(sample.celsius == 25);
+    }
+  }
+  for (uint8_t reg = 0; reg <= 1; ++reg) {
+    Device d; t::TMP1x2 driver; CHECK(driver.begin(d.config()).ok());
+    d.registers[reg] |= 2U; // Invalid reserved bit, still useful as a raw diagnostic.
+    uint16_t raw = 0xDEAD;
+    d.failAt = d.calls + 1;
+    CHECK(driver.readRegister(reg, raw).is(t::Err::I2C_TIMEOUT));
+    CHECK(raw == 0xDEAD && !driver.hardwareConfigDirty());
+    d.failAt = 0;
+    CHECK(driver.readRegister(reg, raw).ok()); CHECK(raw == d.registers[reg]);
+    CHECK(driver.hardwareConfigDirty());
+  }
+}
+
 int main() {
   struct Test { const char* name; void (*run)(); };
   const Test tests[] = {{"public validation and encoding", validationAndEncoding}, {"temperature unit helpers", unitConversions},
@@ -359,7 +408,8 @@ int main() {
     {"one-shot sample provenance", completedConversionProvenance}, {"health statistics and invalidation", healthAndInvalidation},
     {"live register snapshots", registerSnapshots}, {"snapshot failure evidence", snapshotFailureEvidence},
     {"threshold observation failure evidence", thresholdObservationFailureEvidence},
-    {"previous desired format evidence", changedDesiredFormatKeepsPreviousEvidence}};
+    {"previous desired format evidence", changedDesiredFormatKeepsPreviousEvidence},
+    {"tracked register observation evidence", trackedWordObservations}};
   for (const auto& test : tests) { const int before = failures; test.run(); if (before == failures) std::printf("[PASS] %s\n", test.name); }
   return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

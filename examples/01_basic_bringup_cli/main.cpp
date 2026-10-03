@@ -108,6 +108,8 @@ void setup() {
     return;
   }
   TMP1x2::Config config{};
+  config.model = board::SENSOR_MODEL;
+  config.i2cAddress = board::I2C_ADDRESS;
   config.i2cWrite = writeI2c;
   config.i2cWriteRead = readI2c;
   config.nowMs = nowMs;

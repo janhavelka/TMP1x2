@@ -53,6 +53,15 @@ cannot shorten TI's old-format/new-format conversion intervals. This conservativ
 schedule may add one owner tick to each wait. Use the clock hook when precise
 post-callback deadline observations are required.
 
+Applications with 64-bit uptime/deadlines can supply the low 32 bits as the
+driver clock. Check an absolute application deadline first, then bound its
+remaining duration to the operation policy and `INT32_MAX` before passing it
+as `timeoutMs`. The driver takes a relative duration, not an absolute timestamp.
+Retain application deadlines and long-lived sample ages in the wider clock
+domain; zero-extending a wrapped sample timestamp loses its epoch. Update any
+adapter context for the request only after admission returns `IN_PROGRESS`, so
+a rejected concurrent request cannot replace the active request's deadline.
+
 ## Completion, cancellation and trust
 
 Polling a completed job retains its terminal result. `takeResult(token, result)`

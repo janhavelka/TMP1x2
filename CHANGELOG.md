@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Preserve configuration and temperature-format evidence from tracked word reads,
+  including transient EM changes before subsequent recovery.
+- Retain the observed low-threshold verification mismatch when reading the high
+  threshold fails, separately from the transport failure.
 - Preserve prior temperature-format evidence when synchronous setters or rebinding
   adopt an externally changed EM value; the matching marker can still hold an old payload.
 - Retain an observed low-threshold mismatch when the following high-threshold read fails.
@@ -21,6 +25,18 @@
 
 ### Added
 
+- Standalone CMake integration guidance and framework boundary checks covering
+  the shared CLI as well as the core; no application repository is required.
+- Example bus frequency, timeout and Arduino serial baud overrides, with
+  transport-specific range checks.
+- A TMP112D address-select regression for internal thermostat configuration
+  without a physical ALERT pin.
+- Build-time example model/address selection with capability checks, applied
+  before initial I2C access on both Arduino and native ESP-IDF.
+- Serial HIL suites with bounded command completion, baseline restoration,
+  machine-readable results and transcripts; host tests also exercise the real
+  shared CLI output. Physical execution remains pending.
+- Byte-by-byte partial-write fault matrices and stalled hardware-conversion tests.
 - Separate core and shared CLI implementation files by responsibility while retaining
   their public APIs and shared configuration engine; update all build/package paths.
 - Complete chip/peer feature matrix and field-integration guide; consistent

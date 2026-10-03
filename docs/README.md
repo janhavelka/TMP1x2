@@ -1,5 +1,8 @@
 # Documentation
 
+- [2026-10-03 pre-HIL audit](audit-2026-10-03.md): datasheet review, defects,
+  regression evidence and remaining hardware gates.
+- [Serial HIL runner](hil-runner.md): automated suites, fixture setup and evidence.
 - [2026-09-26 audit](audit-2026-09-26.md): sibling parity, confirmed defects and fixes.
 - [Library comparison](library-comparison.md): all local standalone I2C libraries
   surveyed and the chosen API/CLI conventions.

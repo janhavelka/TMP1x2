@@ -309,6 +309,9 @@ public:
   /// or update the clock. Use sampleFresh()/timestampValid for age validation.
   uint32_t sampleAgeMs(uint32_t nowMs) const;
 
+  /// Tracked word diagnostics preserve successfully read words, including
+  /// mismatches; observed configuration/format differences latch dirty evidence.
+  /// They do not update the sample cache. Raw reads bypass these observations.
   Status readRegister(uint8_t reg, uint16_t& out);
   Status writeRegister(uint8_t reg, uint16_t value);
   Status readRegisterRaw(uint8_t reg, uint16_t& out);

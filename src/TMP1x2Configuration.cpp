@@ -86,15 +86,20 @@ Status TMP1x2::verify(bool tracked) {
     markConfigurationDirty(status, config);
     return status;
   }
-  status = read(cmd::REG_TLOW, low, tracked);
-  if (!status.ok()) return status;
-  status = read(cmd::REG_THIGH, high, tracked);
-  if (!status.ok()) return status;
   uint16_t expectedLow = 0, expectedHigh = 0;
   encodeThreshold(_config.lowThresholdC, _config.extendedMode, expectedLow);
   encodeThreshold(_config.highThresholdC, _config.extendedMode, expectedHigh);
+  status = read(cmd::REG_TLOW, low, tracked);
+  if (!status.ok()) return status;
+  // Keep an already observed mismatch even if the following transfer fails.
+  // Transport health and the cause of lost configuration trust are separate.
+  if (low != expectedLow)
+    markDirty(Status::Error(Err::CONFIG_MISMATCH, "Low threshold readback mismatch", low));
+  status = read(cmd::REG_THIGH, high, tracked);
+  if (!status.ok()) return status;
   if (low != expectedLow || high != expectedHigh) {
-    status = Status::Error(Err::CONFIG_MISMATCH, "Threshold readback mismatch");
+    status = Status::Error(Err::CONFIG_MISMATCH, "Threshold readback mismatch",
+                           low != expectedLow ? low : high);
     return status;
   }
   return Status::Ok();
