@@ -1,5 +1,7 @@
 # TMP1x2 repository conventions
 
+Always synchronize Git with the intended upstream branch before starting work by fetching and fast-forwarding safely, preserving existing local changes and reporting any divergence, conflict, or synchronization failure.
+
 - Use simple engineering language in documentation, diagnostics and reports.
 - After verification, commit the prompt's changes and push the intended branch
   after each prompt or logical block. Preserve unrelated work and confirm that
