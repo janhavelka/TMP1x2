@@ -1,3 +1,6 @@
+#if __has_include("Tmp1x2BuildIdentity.h")
+#include "Tmp1x2BuildIdentity.h"  // Generated only by the native IDF example.
+#endif
 #include "Tmp1x2Cli.h"
 
 // Shared help and cached views; rendering itself performs no bus operations.
@@ -20,6 +23,7 @@ void Cli::printVersion() {
 #ifdef TMP1X2_VERSION_STRING
   print("Library: %s\n", TMP1X2_VERSION_FULL);
 #endif
+  print("Firmware: git=%s tree=%s built=%s\n", TMP1X2_GIT_COMMIT, TMP1X2_GIT_STATUS, TMP1X2_BUILD_TIMESTAMP);
 }
 void Cli::printHelp() {
   print("%s=== TMP1x2 CLI Help ===%s\n", color(36), color(0));
@@ -30,6 +34,7 @@ void Cli::printHelp() {
   section("Common");
   item("help / ?", "Show this help");
   item("version / ver", "Firmware, library and framework version");
+  item("bus", "Cached application pins, frequency and timeout; no I2C");
   item("scan", "Probe 0x08..0x77; bounded, diagnostic traffic");
   item("discover", "Probe 0x40..0x43 and 0x48..0x4B; identity unverified");
   item("init / begin", "Start cooperative initialization and verification");
@@ -53,6 +58,9 @@ void Cli::printHelp() {
   item("watch [N] [interval_ms]", "Finite sampling, default 20 at 1000 ms");
   item("stop", "Stop sampling or cancel an operation; no I2C");
   item("job / job status", "Cached cooperative operation progress; no I2C");
+  item("job auto [0|1]", "Show/set automatic owner polling; default 1");
+  item("job step [0..255]", "Poll owner job once, bounded callbacks; default 1");
+  item("job start <kind> [timeout_ms]", "init|recover|shutdown|read; 1..2147483647 ms, default 1000");
   item("result / job result", "Retained terminal operation result; no I2C");
   item("cancel / job cancel", "Cancel active operation without I2C");
   item("stats [reset]", "Cached run summary or idle summary reset; no I2C");
@@ -88,6 +96,7 @@ void Cli::printHelp() {
   item("diag", "Version, desired settings and cached health");
   item("probe", "Read device configuration without driver health effects");
   item("recover", "Cooperatively reapply desired configuration");
+  item("invalidate", "Bus-silent external-reset/hotplug notification; requires recovery");
   item("busreset / reset all", "General-call RESET of ALL compatible bus devices");
   item("ara / alertresponse", "Acknowledge one SMBus ALERT response winner");
   item("stress [N]", "Finite cooperative samples, default 100; stop cancels");
@@ -95,10 +104,12 @@ void Cli::printHelp() {
   item("selfcheck / selftest", "Cooperative read-only PASS/FAIL/SKIP chip checks");
   item("selftest full", "Mutate/test all settings, then restore captured profile");
   item("xfer_stats / counters", "Independent cached adapter transfer counters");
+  item("xfer_assert <attempts> [ok fail]", "Assert exact unsaturated adapter totals; no I2C");
   item("xfer_reset", "Reset adapter counters while idle; preserves health");
   item("healthreset", "Clear cumulative health totals while idle; retain state/error");
   print("\nRegister reads and ARA can acknowledge interrupt ALERT. No automatic bus reset.\n");
   print("Full-test stop/cancel starts baseline restoration; a second cancellation aborts restoration.\n");
+  print("job auto controls owner jobs; explicit watch/diagnostics keep their own scheduling. Manual jobs need a suitable deadline.\n");
 }
 void Cli::printSample(const TMP1x2::Sample& sample) {
   _lastSample = sample;
@@ -133,7 +144,7 @@ void Cli::printTiming() {
   print("EM changes settle the old format and complete a new-format conversion; each wait includes a 1 ms clock margin.\n");
 }
 void Cli::printTransferStats() {
-  if (!_platform.transferStats) { print("No adapter transfer counters.\n"); return; }
+  if (!_platform.transferStats) { status(TMP1x2::Status::Error(TMP1x2::Err::INVALID_CONFIG, "No adapter transfer counters.")); return; }
   const auto bus = _platform.transferStats(_platform.user);
   print("Bus: attempts=%lu ok=%lu fail=%lu (includes raw/scan/probe; independent of driver health)\n",
         static_cast<unsigned long>(bus.attempts), static_cast<unsigned long>(bus.successes),

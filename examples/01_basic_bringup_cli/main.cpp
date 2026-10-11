@@ -128,6 +128,9 @@ void setup() {
   platform.resetTransferStats = resetStats;
   platform.busWrite = writeI2c;
   platform.busReceive = receiveI2c;
+  platform.sdaPin = board::I2C_SDA;
+  platform.sclPin = board::I2C_SCL;
+  platform.i2cFrequencyHz = board::I2C_FREQUENCY_HZ;
   platform.framework = "Arduino-ESP32";
 #ifdef ESP_ARDUINO_VERSION_STR
   platform.frameworkVersion = ESP_ARDUINO_VERSION_STR;

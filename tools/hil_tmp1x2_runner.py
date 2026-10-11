@@ -32,7 +32,9 @@ DIAGNOSTIC = re.compile(r"Diagnostic summary: (complete|cancelled|active) pass=(
 RUN = re.compile(r"Run: (active|stopped) target=(\d+) completed=(\d+) ok=(\d+) fail=(\d+) elapsed=(\d+) ms remaining=(\d+)")
 SAMPLE = re.compile(r"Temperature: ([+-]?\d+\.\d+) C raw=0x([0-9A-Fa-f]{4}) counts=(-?\d+) extended=(yes|no) timestamp=(\d+) ms clock=(known|unknown) one-shot=(confirmed|unproven)")
 TRANSPORT_ERRORS = {"I2C_ERROR", "I2C_NACK_ADDR", "I2C_NACK_DATA", "I2C_TIMEOUT", "I2C_BUS", "DEVICE_NOT_FOUND", "TIMEOUT"}
-MUTATING = {"config", "oneshot", "alert", "disconnect"}
+MUTATING = {"config", "oneshot", "alert", "disconnect", "registers", "owner", "negative"}
+SNAPSHOT_TRUST = "config-match=yes thresholds-match=yes temperature-trusted=yes"
+RESTART = re.compile(r"Diagnostic CLI; application owns the bus|ESP-ROM:|(?:^|\n)rst:0x|Rebooting\.\.\.")
 SYNC_PATTERNS = {
     "version": r"TMP1x2 diagnostic CLI.*\nLibrary: \S+",
     "job": r"Operation: active=(?:yes|no) token=\d+|Diagnostic: [^\n]+ active=(?:yes|no)",
@@ -48,7 +50,33 @@ SYNC_PATTERNS = {
     "config": r"CONFIG=0x[0-9A-Fa-f]{4} valid=yes OS=[01] EM=[01] AL=[01] ALERT-active=(?:yes|no)",
     "alertpin": r"Physical ALERT: (?:active|inactive) pin=\d+",
     "stop": r"(?:stopped:|Operation result:|Diagnostic summary:)",
+    "start": r"\[I\] OK\b",
+    "ready": r"Ready: (?:yes|no)",
+    "readblocking 500": SAMPLE.pattern,
+    "dump": r"0x03 = 0x[0-9A-Fa-f]{4}",
+    "rawdump": r"0x03 = 0x[0-9A-Fa-f]{4}",
+    "invalidate": r"\[I\] OK\b",
+    "job auto": r"Job auto: (?:on|off)",
+    "job auto 0": r"Job auto: off",
+    "job auto 1": r"Job auto: on",
+    "job cancel": r"Operation result:|\[I\] OK\b",
 }
+
+
+def sync_pattern(command: str) -> str:
+    if command.startswith("job start "):
+        return r"Operation started: token=\d+ kind=\w+"
+    if command.startswith("job step "):
+        return r"Poll: budget=\d+ transfers=\d+ done=(?:yes|no) next=\d+ ms"
+    if command.startswith("rawread "):
+        return r"Raw 0x0[0-3] = 0x[0-9A-Fa-f]{4}"
+    if command.startswith("rawwrite "):
+        return r"\[I\] OK\b"
+    if command.startswith("convert "):
+        return r"Decoded: -?\d+\.\d+ C"
+    if command.startswith(("thcalc ", "thdecode ")):
+        return r"Threshold: 0x[0-9A-Fa-f]{4} = -?\d+\.\d+ C format=(?:normal|extended)"
+    return SYNC_PATTERNS.get(command, r"(?!)")
 
 
 def clean(text: str) -> str:
@@ -84,7 +112,7 @@ class EvidenceFiles:
                 raise FileExistsError("refusing to overwrite existing HIL evidence")
             # An interrupted run leaves a valid INCONCLUSIVE document, never PASS.
             with path.open("x", encoding="utf-8") as output:
-                json.dump(dict(schema_version=1, outcome="INCONCLUSIVE", hardware_run=None,
+                json.dump(dict(schema_version=2, outcome="INCONCLUSIVE", hardware_run=None,
                                reason="run has not completed", metadata=vars(args)), output, indent=2)
                 output.write("\n")
             self.transcript = path.with_suffix(".txt").open("xb")
@@ -156,11 +184,13 @@ def response_complete(command: str, output: str) -> bool:
     # Synchronous cancellation prints two prompts (finishOperation + feed).
     # A prompt can arrive in a separate USB packet after the previous response;
     # ignore it until this command's payload is present.
-    return bool(ERROR.search(output) or re.search(SYNC_PATTERNS.get(command, r"(?!)"), output))
+    return bool(ERROR.search(output) or re.search(sync_pattern(command), output))
 
 
 def classify(command: str, output: str, completed: bool = True) -> tuple[str, str]:
     output = clean(output)
+    if RESTART.search(output):
+        return "INCONCLUSIVE", "firmware restarted during the command; session state is lost"
     if not completed:
         return "INCONCLUSIVE", "deadline expired before a complete response"
     errors = ERROR.findall(output)
@@ -185,7 +215,7 @@ def classify(command: str, output: str, completed: bool = True) -> tuple[str, st
             return "INCONCLUSIVE", "missing checks or unexpected skipped checks"
         if command == "selftest full" and "Baseline restoration: verified\n" not in output:
             return "FAIL", "captured baseline restoration was not verified"
-        if command == "snapshot read" and "config-match=yes thresholds-match=yes temperature-trusted=yes" not in output:
+        if command in {"selfcheck", "snapshot read"} and SNAPSHOT_TRUST not in output:
             return "FAIL", "snapshot configuration, thresholds or temperature are untrusted"
     elif command.startswith(("stress ", "stress_mix ")):
         run = RUN.search(output)
@@ -203,12 +233,21 @@ def classify(command: str, output: str, completed: bool = True) -> tuple[str, st
             return "FAIL", "mixed run is missing expected samples"
         if "Counter saturation reached" in output:
             return "INCONCLUSIVE", "saturated transport counters cannot establish exact run accounting"
-        if not re.search(r"Tracked health delta: ok=\d+ fail=\d+", output) or not re.search(r"Adapter delta: attempts=\d+ ok=\d+ fail=\d+", output):
+        tracked = re.search(r"Tracked health delta: ok=(\d+) fail=(\d+)", output)
+        adapter = re.search(r"Adapter delta: attempts=(\d+) ok=(\d+) fail=(\d+)", output)
+        if not tracked or not adapter:
             return "INCONCLUSIVE", "missing tracked health or adapter transfer deltas"
         if re.search(r"(?:Tracked health|Adapter) delta:[^\n]*fail=[1-9]", output):
             return "FAIL", "run recorded transport failures"
+        tracked_ok, tracked_fail = map(int, tracked.groups())
+        attempts, adapter_ok, adapter_fail = map(int, adapter.groups())
+        minimum = expected * (5 if command.startswith("stress_mix") else 1)
+        bypassed = expected if command.startswith("stress_mix") else 0
+        if (tracked_ok < minimum or attempts != adapter_ok + adapter_fail or
+                adapter_ok != tracked_ok + bypassed or tracked_fail != adapter_fail):
+            return "FAIL", "physical transfer accounting does not match completed work and untracked probes"
     else:
-        if command not in SYNC_PATTERNS or not re.search(SYNC_PATTERNS[command], output):
+        if not re.search(sync_pattern(command), output):
             return "INCONCLUSIVE", "missing command-specific response"
         if command == "stop":
             summary = DIAGNOSTIC.search(output)
@@ -224,7 +263,7 @@ def expected_error(result: Result, allowed: set[str]) -> bool:
     output = clean(result.output)
     errors = ERROR.findall(output)
     return (result.outcome == "FAIL" and bool(errors) and set(errors) <= allowed and
-            "[FAIL]" not in output and response_complete(result.command, output))
+            "[FAIL]" not in output and not RESTART.search(output) and response_complete(result.command, output))
 
 
 def parse_settings(output: str) -> dict:
@@ -263,6 +302,29 @@ def parse_health(output: str) -> dict:
     return dict(state=health[1], online=health[2] == "yes", consecutive=int(health[3]),
                 ok=int(health[4]), fail=int(health[5]), bound=trust[1] == "yes",
                 initialized=trust[2] == "yes", dirty=trust[3] == "yes", pending=conversion[1] == "yes")
+
+
+def parse_firmware(output: str) -> dict:
+    output = clean(output)
+    banner = re.search(r"TMP1x2 diagnostic CLI\s*\|\s*(\S+) ([^|]+)\|\s*([^|]+)\|", output)
+    library = re.search(r"^Library: (\S+)", output, re.MULTILINE)
+    identity = re.search(r"^Firmware: git=(\S+) tree=(clean|dirty|unknown) built=([^\n]+)", output, re.MULTILINE)
+    if not banner or not library or not identity:
+        raise CheckError("missing complete firmware identity; rebuild the shared CLI")
+    return dict(framework=banner[1], framework_version=banner[2].strip(), target=banner[3].strip(),
+                library=library[1], commit=identity[1], tree=identity[2], built=identity[3].strip())
+
+
+def parse_counters(output: str) -> tuple[int, int, int]:
+    match = re.search(r"Bus: attempts=(\d+) ok=(\d+) fail=(\d+)", clean(output))
+    if not match:
+        raise CheckError("missing adapter counters")
+    counts = tuple(map(int, match.groups()))
+    if any(value >= 0xFFFFFFFF for value in counts):
+        raise CheckError("saturated counters cannot establish exact transfer accounting")
+    if counts[0] != counts[1] + counts[2]:
+        raise CheckError("inconsistent adapter counters")
+    return counts
 
 
 def check_sample(output: str, minimum: float, maximum: float, extended=None, fresh=False) -> tuple[str, str]:
@@ -305,8 +367,9 @@ def check_comparator(output: str, polarity: str, faults: int, active: bool) -> t
         return "INCONCLUSIVE", "missing raw and decoded comparator report"
     word = int(raw[1], 16)
     queue_code = {1: 0, 2: 1, 4: 2, 6: 3}[faults]
-    if bool(word & 0x0400) != (polarity == "high") or (word >> 11) & 3 != queue_code or word & 0x0300:
-        return "FAIL", "raw CONFIG does not select requested comparator, polarity, fault queue and continuous mode"
+    if (bool(word & 0x0400) != (polarity == "high") or (word >> 11) & 3 != queue_code or
+            word & 0x0300 or word & 0x00D0 != 0x00D0):
+        return "FAIL", "raw CONFIG does not select requested comparator, polarity, fault queue, continuous 8 Hz and extended format"
     raw_al = bool(word & 0x0020)
     if raw_al != (active == (polarity == "high")) or raw_al != bool(int(decoded[1])) or (decoded[2] == "yes") != active:
         return "FAIL", "raw AL and decoded state do not match the applied threshold stimulus"
@@ -324,6 +387,8 @@ class SerialSession:
         self.transcript_file = transcript_file
         self.transcript_error = None
         self.retained_chars = 0
+        self.restarted = False
+        self.framing_lost = False
 
     def log(self, data: bytes):
         if self.transcript_file is not None and self.transcript_error is None:
@@ -373,13 +438,17 @@ class SerialSession:
         deadline = started + timeout
         chunks = bytearray()
         complete = False
+        write_attempted = False
         self.log(f"\n=== {command} ===\n".encode("utf-8"))
         try:
+            if self.framing_lost:
+                raise OSError("serial command framing was lost; command was not sent")
             if timeout <= 0:
                 raise OSError("command deadline already expired; command was not sent")
             payload = (command + "\n").encode("ascii")
             if hasattr(self.serial, "write_timeout"):
                 self.serial.write_timeout = min(self.command_timeout, timeout)
+            write_attempted = True
             if self.serial.write(payload) != len(payload):
                 raise OSError("partial serial command write")
             # No serial.flush(): some host drivers have an unbounded drain wait.
@@ -402,7 +471,12 @@ class SerialSession:
             output = chunks.decode("utf-8", errors="replace")
             outcome, reason = classify(command, output, complete)
             result = Result(command, command, outcome, reason, output, self.clock() - started)
+        if write_attempted and not complete:
+            # Partial command bytes or a delayed prior response make the next
+            # prompt impossible to attribute safely. Do not guess with cleanup.
+            self.framing_lost = True
         self.retain(f"=== {command} [{result.outcome}] ===\n{result.output}")
+        self.restarted = self.restarted or bool(RESTART.search(clean(result.output)))
         self.log(f"\n=== {result.outcome}: {result.reason} ===\n".encode("utf-8"))
         return result
 
@@ -419,6 +493,9 @@ class Runner:
         self.suites = [dict(name=name, outcome="NOT_RUN") for name in args.suite]
         self.retained_chars = 0
         self.cleanup_active = False
+        self.firmware = None
+        self.original_auto = None
+        self.firmware_verification = "not requested"
 
     def record(self, result: Result) -> Result:
         if len(self.results) >= MAX_RESULTS and not self.cleanup_active:
@@ -468,11 +545,35 @@ class Runner:
         return health
 
     def preflight(self):
-        self.command("version")
+        self.firmware = parse_firmware(self.command("version").output)
+        expected_identity = self.args.expected_firmware_commit or self.args.expected_framework or self.args.expected_target or self.args.require_clean_firmware
+        if expected_identity:
+            self.firmware_verification = "not verified"
+        if self.args.expected_firmware_commit:
+            expected = self.args.expected_firmware_commit.lower()
+            actual = self.firmware["commit"].lower()
+            self.assertion("firmware commit identity", actual == expected or
+                           (re.fullmatch(r"[0-9a-f]{7,40}", actual) is not None and
+                            (actual.startswith(expected) or expected.startswith(actual))),
+                           "firmware commit must match the explicitly expected Git revision")
+        if self.args.expected_framework:
+            self.assertion("firmware framework identity", self.firmware["framework"] == self.args.expected_framework,
+                           "firmware framework must match the explicitly expected framework")
+        if self.args.expected_target:
+            self.assertion("firmware target identity", self.firmware["target"] == self.args.expected_target,
+                           "firmware target must match the explicitly expected target")
+        if self.args.require_clean_firmware:
+            self.assertion("firmware source cleanliness", self.firmware["tree"] == "clean",
+                           "firmware must report a clean source tree")
+        if expected_identity:
+            self.firmware_verification = "matched requested fields"
         job = self.command("job").output
         self.assertion("idle owner operation", "Operation: active=no " in clean(job) and "active=yes" not in clean(job), "CLI must have no active operation or diagnostic")
         stats = self.command("stats").output
         self.assertion("idle sampler", "Run: active " not in stats, "CLI must have no active watch or stress run")
+        auto = clean(self.command("job auto").output)
+        self.assertion("automatic owner polling", "Job auto: on" in auto, "runner requires automatic owner polling on entry")
+        self.original_auto = True
         self.baseline = parse_settings(self.command("settings").output)
         normalized_model = self.baseline["model"].lower().replace("_address_select", "")
         self.assertion("selected BOM model", normalized_model == self.args.model, "firmware model must match operator-selected BOM; no unique chip ID exists")
@@ -517,6 +618,138 @@ class Runner:
         if outcome != "PASS":
             raise CheckError(reason)
         self.command("verify")
+        self.command("start")
+        # OS can already be ready over a slow serial link; never require a
+        # not-ready observation that the fixture cannot guarantee.
+        deadline = time.monotonic() + self.args.command_timeout
+        while True:
+            result = self.command("ready", timeout_s=deadline - time.monotonic())
+            if "Ready: yes" in clean(result.output):
+                break
+            if time.monotonic() >= deadline:
+                raise CheckError("manual one-shot did not become ready")
+            time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
+        self.command("tryread")
+        self.sample(False, fresh=True)
+        self.command("readblocking 500")
+        self.sample(False, fresh=True)
+
+    def negative(self):
+        # A broken parser might accept the invalid write: prepare restoration
+        # before trying it, including when its response is lost.
+        self.mutated = True
+        profile = parse_settings(self.command("settings").output)
+        health = parse_health(self.command("health").output)
+        job = re.sub(r"\bnext=\d+ ms", "next=<clock>", clean(self.command("job").output))
+        before = parse_counters(self.command("xfer_stats").output)
+        for command in ("wreg 0 1", "wreg 1 65536", "rawwrite 2 -1", "rawread 4",
+                        "threshold nan 80", "threshold 1 inf", "threshold 20 10",
+                        "rate 9", "faults 3", "mode potato", "extended 2", "watch -1",
+                        "stress_mix 0", "selftest full extra", "reg 0 extra",
+                        "job step 256", "job start read 0", "freshness -1"):
+            self.expect_error(command, {"INVALID_PARAM", "INVALID_CONFIG"})
+        self.assertion("invalid commands are bus-silent", parse_counters(self.command("xfer_stats").output) == before,
+                       "rejected command inputs must cause zero physical transfers")
+        self.assertion("invalid commands preserve desired settings", parse_settings(self.command("settings").output) == profile,
+                       "rejected command inputs must not change the selected profile")
+        self.assertion("invalid commands preserve passive health", parse_health(self.command("health").output) == health,
+                       "precondition errors must not alter physical transport health")
+        self.assertion("invalid commands preserve owner operation", re.sub(r"\bnext=\d+ ms", "next=<clock>", clean(self.command("job").output)) == job,
+                       "rejected commands must not start or change an owner operation")
+
+    def expect_error(self, command: str, allowed: set[str]):
+        result = self.session.command(command)
+        if expected_error(result, allowed):
+            result.outcome, result.reason = "PASS", "expected rejected operation: " + ERROR.search(clean(result.output))[1]
+        elif result.outcome == "PASS":
+            result.outcome, result.reason = "FAIL", "operation unexpectedly succeeded"
+        self.record(result)
+        if result.outcome != "PASS":
+            raise CheckError(result.reason)
+        return result
+
+    def registers(self):
+        self.mutated = True
+        health = parse_health(self.command("health").output)
+        before = parse_counters(self.command("xfer_stats").output)
+        raw = self.command("rawdump").output
+        words = {int(reg, 16): int(word, 16) for reg, word in re.findall(r"0x(0[0-3]) = 0x([0-9A-Fa-f]{4})", clean(raw))}
+        self.assertion("all raw registers returned", set(words) == {0, 1, 2, 3}, "rawdump must return all four chip registers")
+        after = parse_counters(self.command("xfer_stats").output)
+        self.assertion("raw dump transfer accounting", tuple(a - b for a, b in zip(after, before)) == (4, 4, 0),
+                       "rawdump must perform exactly four successful register transfers")
+        self.assertion("raw reads bypass driver health", parse_health(self.command("health").output) == health,
+                       "raw diagnostics must not change tracked health")
+        self.command("dump")
+        tracked = parse_health(self.command("health").output)
+        self.assertion("tracked dump transfer accounting", tracked["ok"] - health["ok"] == 4 and tracked["fail"] == health["fail"],
+                       "dump must account for four successful tracked reads")
+        before_helpers = parse_counters(self.command("xfer_stats").output)
+        for command, expected in (("convert 0x1900", "Decoded: 25.0000 C"),
+                                  ("convert 0xF600", "Decoded: -10.0000 C"),
+                                  ("convert 0x4B01", "Decoded: 150.0000 C"),
+                                  ("thcalc 20.01 normal", "Threshold: 0x1400 = 20.0000 C format=normal"),
+                                  ("thdecode 0xF600 normal", "Threshold: 0xF600 = -10.0000 C format=normal")):
+            self.assertion("pure register conversion", expected in clean(self.command(command).output), command + " must return the known signed encoding")
+        self.assertion("conversion helpers are bus-silent", parse_counters(self.command("xfer_stats").output) == before_helpers,
+                       "encoding and decoding helpers must not access the sensor")
+        self.command(f"rawwrite 2 0x{words[2]:04X}")
+        dirty = parse_health(self.command("health").output)
+        self.assertion("raw write invalidates trust without health effects", dirty["dirty"] and
+                       all(dirty[key] == tracked[key] for key in ("ok", "fail", "consecutive", "state")),
+                       "even a same-value raw write needs explicit reconciliation")
+        self.command("recover")
+        self.command("snapshot read")
+        self.healthy()
+
+    def owner(self):
+        self.mutated = True
+        auto = self.command("job auto").output
+        self.original_auto = "on" in clean(auto)
+        self.command("job auto 0")
+        before = parse_counters(self.command("xfer_stats").output)
+        self.command("job start shutdown 2147483647")
+        zero = self.command("job step 0").output
+        self.assertion("zero owner budget", "Poll: budget=0 transfers=0 done=no" in clean(zero) and
+                       parse_counters(self.command("xfer_stats").output) == before,
+                       "operation admission and zero-budget polling must be bus-silent")
+        one = self.command("job step 1").output
+        after = parse_counters(self.command("xfer_stats").output)
+        self.assertion("one owner budget", "Poll: budget=1 transfers=1 done=no" in clean(one) and
+                       tuple(a - b for a, b in zip(after, before)) == (1, 1, 0),
+                       "one owner poll must use exactly its single permitted transfer")
+        self.expect_error("job cancel", {"CANCELLED"})
+        self.assertion("owner cancellation is bus-silent", parse_counters(self.command("xfer_stats").output) == after,
+                       "cancellation before the first write must cause no new transfer")
+        self.command("job start shutdown 2147483647")
+        two = self.command("job step 2").output
+        after_write = parse_counters(self.command("xfer_stats").output)
+        self.assertion("two owner budget", "Poll: budget=2 transfers=2 done=no" in clean(two) and
+                       tuple(a - b for a, b in zip(after_write, after)) == (2, 2, 0),
+                       "two-budget poll must read configuration and attempt its first write")
+        cancelled = self.expect_error("job cancel", {"CANCELLED"})
+        dirty = parse_health(self.command("health").output)
+        self.assertion("post-write cancellation retains effect evidence", "write-attempted=yes" in clean(cancelled.output) and dirty["dirty"] and
+                       parse_counters(self.command("xfer_stats").output) == after_write,
+                       "cancellation adds no I2C and must retain the attempted hardware effect")
+        self.command("job auto 1")
+        self.command("recover")
+        self.healthy()
+        self.command("job auto 0")
+        after = parse_counters(self.command("xfer_stats").output)
+        self.command("job start read 1")
+        time.sleep(0.02)
+        self.expect_error("job step 0", {"OPERATION_TIMEOUT"})
+        self.assertion("expired operation is bus-silent", parse_counters(self.command("xfer_stats").output) == after,
+                       "deadline expiry with a zero budget must not perform I2C")
+        self.command("invalidate")
+        health = parse_health(self.command("health").output)
+        self.assertion("external invalidation is bus-silent", health["dirty"] and health["bound"] and
+                       parse_counters(self.command("xfer_stats").output) == after,
+                       "external state invalidation must retain dirty evidence without I2C")
+        self.command("job auto 1")
+        self.command("recover")
+        self.healthy()
 
     def stress(self):
         self.background_started = True
@@ -651,8 +884,18 @@ class Runner:
         if self.mutated:
             self.restoration = "not verified"
             print("Restoring captured desired profile and verifying hardware readback.", flush=True)
+        restarted = getattr(self.session, "restarted", False) is True
+        framing_lost = getattr(self.session, "framing_lost", False) is True
+        if restarted or framing_lost:
+            reason = "firmware restart detected" if restarted else "serial command framing lost"
+            self.record(Result("baseline restoration" if self.mutated else "session cleanup", "",
+                               "FAIL" if self.mutated else "INCONCLUSIVE",
+                               reason + "; target must be checked before cleanup; captured profile is retained"))
+            return
         try:
             self.stop_owned_work()
+            if self.original_auto is not None:
+                self.command("job auto 1")
             if not self.mutated:
                 return
             for command in restore_commands(self.baseline):
@@ -730,14 +973,17 @@ def _write_report(path: Path, runner: Runner, evidence: EvidenceFiles) -> int:
     counts = {outcome: sum(result.outcome == outcome for result in runner.results) for outcome in ("PASS", "FAIL", "SKIP", "INCONCLUSIVE")}
     outcome = "FAIL" if counts["FAIL"] else "INCONCLUSIVE" if counts["INCONCLUSIVE"] or not counts["PASS"] else "PASS"
     dirty_status = git_value("status", "--porcelain")
-    report = dict(schema_version=1, recorded_utc=dt.datetime.now(dt.timezone.utc).isoformat(),
+    report = dict(schema_version=2, recorded_utc=dt.datetime.now(dt.timezone.utc).isoformat(),
                   outcome=outcome, scope="selected automated checks only; physical accuracy/ALERT/timing require separate evidence",
                   hardware_run=bool(getattr(runner.session, "hardware_connected", False)), metadata=vars(runner.args), git_commit=git_value("rev-parse", "HEAD"),
                   git_dirty=None if dirty_status == "unknown" else bool(dirty_status), baseline=runner.baseline,
+                  firmware=runner.firmware, firmware_verification=runner.firmware_verification,
+                  host_source=dict(commit=git_value("rev-parse", "HEAD"), dirty=None if dirty_status == "unknown" else bool(dirty_status)),
                   restoration=runner.restoration, counts=counts, suites=runner.suites,
                   manual_gates=[dict(name=name, outcome="NOT_RUN") for name in
                                 ("calibrated thermal accuracy", "exact conversion and fault-queue timing",
-                                 "interrupt ALERT acknowledgement", "ARA arbitration", "general-call reset", "bus electrical margins")],
+                                 "shutdown hold under thermal stimulus", "interrupt ALERT acknowledgement",
+                                 "ARA arbitration", "general-call reset", "bus electrical margins", "shared-bus concurrent owner isolation")],
                   results=[asdict(result) for result in runner.results])
     evidence.write_json(report)
     print(f"{outcome}: {path}; restoration: {runner.restoration}")
@@ -757,12 +1003,16 @@ def parse_args(argv=None):
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--model", choices=("tmp102", "tmp112", "tmp112d"))
     parser.add_argument("--address", type=lambda value: int(value, 0), help="explicit package/strap address, e.g. 0x48")
-    parser.add_argument("--suite", action="append", choices=("smoke", "config", "oneshot", "stress", "alert", "disconnect"), help="repeat for ordered suites; default smoke")
+    parser.add_argument("--suite", action="append", choices=("smoke", "config", "oneshot", "stress", "alert", "disconnect", "negative", "owner", "registers"), help="repeat for ordered suites; default smoke")
     parser.add_argument("--dry-run", action="store_true", help="show selected actions without serial or a hardware result")
     parser.add_argument("--board", default="unspecified")
     parser.add_argument("--part", default="unspecified", help="full orderable part/package and marking")
     parser.add_argument("--operator", default="unspecified")
     parser.add_argument("--notes", default="", help="supply, pullups, bus clock, reference thermometer, wiring")
+    parser.add_argument("--expected-firmware-commit", help="expected firmware Git commit, full or unambiguous 7..40 digit abbreviation")
+    parser.add_argument("--expected-framework", help="exact firmware framework token from version: Arduino-ESP32 or native-esp-idf")
+    parser.add_argument("--expected-target", help="exact firmware target from version")
+    parser.add_argument("--require-clean-firmware", action="store_true", help="require firmware built from a clean Git tree")
     parser.add_argument("--min-c", type=float, default=-40.0, help="operator expected temperature window (not an accuracy specification)")
     parser.add_argument("--max-c", type=float, default=125.0)
     parser.add_argument("--format-tolerance-c", type=positive, default=1.0, help="maximum normal/extended/normal spread in a thermally stable fixture")
@@ -775,6 +1025,10 @@ def parse_args(argv=None):
     parser.add_argument("--report", default="hil_logs/tmp1x2-" + dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ") + ".json")
     args = parser.parse_args(argv)
     args.suite = args.suite or ["smoke"]
+    if args.expected_firmware_commit and not re.fullmatch(r"[0-9a-fA-F]{7,40}", args.expected_firmware_commit):
+        parser.error("--expected-firmware-commit must be 7..40 hexadecimal digits")
+    if any(value and value.lower() == "unknown" for value in (args.expected_framework, args.expected_target)):
+        parser.error("unknown is not a verifiable firmware expectation")
     if not 1 <= args.stress_count <= 100000 or args.baud <= 0:
         parser.error("stress count must be 1..100000 and baud must be positive")
     if not all(math.isfinite(value) for value in (args.min_c, args.max_c)) or args.min_c > args.max_c:
@@ -799,19 +1053,23 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     if args.dry_run:
         print("DRY RUN: no serial connection, hardware result or firmware upload")
-        print("preflight: version; job; stats; settings; health; verify")
+        print("preflight: version/firmware identity; job; stats; job auto; settings; health; verify")
         descriptions = {
             "smoke": "probe; settings read; snapshot read; selfcheck; read; sample; xfer_stats",
             "config": "selftest full (18 settings cases + verified firmware restoration)",
-            "oneshot": "shutdown; representable thresholds; normal/extended/normal confirmed samples + snapshots + thermal continuity",
+            "oneshot": "shutdown; normal/extended/normal confirmed samples + snapshots + thermal continuity; manual start/ready/tryread; blocking read",
             "stress": f"stress {args.stress_count}; stress_mix {args.stress_count}; sample checks; stop bus-silence check",
             "alert": "comparator threshold stimulus at both polarities/all fault queues; raw AL + optional GPIO; restores profile",
             "disconnect": "guided sensor disconnect; OFFLINE threshold; guided reconnect; health-bypassing probes; explicit recover",
+            "negative": "malformed commands; expected argument errors; unchanged bus/profile/health/owner state; restore if needed",
+            "owner": "manual zero/one/two transfer budgets; cancellation before/after write; deadline; external invalidation; recover",
+            "registers": "all raw/tracked registers; signed conversion helpers; raw same-value write invalidation; recover",
         }
         for suite in args.suite:
             print(f"{suite}: {descriptions[suite]}")
         if MUTATING.intersection(args.suite):
             print("finally: stop once; restore captured profile using recover/typed settings; verify snapshot and health")
+            print("cleanup requires intact serial framing and no detected restart; otherwise retain the profile for manual recovery")
         return 0
     report_path = Path(args.report)
     try:

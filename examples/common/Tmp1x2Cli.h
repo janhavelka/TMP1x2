@@ -31,6 +31,9 @@ struct Platform {
   const char* framework = "unknown";
   const char* frameworkVersion = "unknown";
   const char* target = "unknown";
+  int sdaPin = -1;
+  int sclPin = -1;
+  uint32_t i2cFrequencyHz = 0; ///< Zero means unspecified by the application.
 };
 
 class Cli {
@@ -56,7 +59,9 @@ class Cli {
   // Records a completed attempt; false means waiting or stopped at the deadline.
   bool tickRunSample(uint32_t nowMs);
   void tickMixed(uint32_t nowMs);
-  TMP1x2::Status startOperation(TMP1x2::OperationKind kind, const TMP1x2::Config* desired = nullptr);
+  TMP1x2::Status startOperation(TMP1x2::OperationKind kind, const TMP1x2::Config* desired = nullptr,
+                                 uint32_t timeoutMs = 1000);
+  void pollOperation(uint8_t budget, bool report = false);
   void finishOperation();
   void printOperation();
   void printOperationResult();
@@ -86,6 +91,7 @@ class Cli {
   TMP1x2::OperationResult _lastOperation{};
   bool _hasOperationResult = false;
   bool _lastResultDiagnostic = false;
+  bool _jobAuto = true;
   struct Diagnostic {
     DiagnosticKind kind = DiagnosticKind::NONE;
     bool active = false;

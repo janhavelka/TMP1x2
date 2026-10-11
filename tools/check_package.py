@@ -22,7 +22,9 @@ REQUIRED = {
     "examples/common/Tmp1x2CliDiagnostics.cpp", "examples/common/Tmp1x2CliOutput.cpp",
     "examples/common/BoardConfig.h", "examples/01_basic_bringup_cli/main.cpp",
     "examples/esp_idf/basic/CMakeLists.txt", "examples/esp_idf/basic/main/CMakeLists.txt",
-    "examples/esp_idf/basic/main/main.cpp", "examples/esp_idf/basic/platformio.ini",
+    "examples/esp_idf/basic/main/main.cpp", "examples/esp_idf/basic/main/BuildIdentity.cmake",
+    "examples/esp_idf/basic/platformio.ini",
+    "examples/esp_idf/basic/generate_identity.py",
     "examples/esp_idf/basic/sdkconfig.defaults",
 }
 

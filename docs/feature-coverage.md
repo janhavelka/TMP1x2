@@ -92,11 +92,20 @@ The shared CLI provides finite sampling/mixed stress, quiet mode, cached results
 cooperative scan/discovery/self-check, an explicit full configuration exercise
 with baseline restoration, raw diagnostics and shared-bus maintenance. Details
 and physical side effects are listed in [the example guide](../examples/README.md).
+Manual `job auto` / `job step` service and explicit operation deadlines expose
+zero/one/many-transfer budgets, cancellation and timeout behavior at the console.
+Cached bus context and `xfer_assert` support exact traffic checks. `invalidate`
+exercises external-change recovery without sending a shared-bus reset. Live
+diagnostics report a failure when observations disagree with the desired profile
+or the temperature is untrusted, even when all I2C transfers succeeded.
 Host tests validate modeled behavior; the [hardware procedure](hardware-validation.md)
 is still required for electrical timing, ALERT thresholds and sensor accuracy.
 
 The [serial HIL runner](hil-runner.md) automates configuration/readback, format
 transitions, one-shots, finite stress, comparator AL/optional GPIO response and
 guided disconnect/recovery. It records selected checks and omissions explicitly.
+Additional suites check rejected-command invariants, manual owner operations,
+raw/tracked registers and verified recovery. Firmware identity is recorded
+separately from the runner checkout and can be checked before mutating tests.
 Native tests and the isolated package consumer run without any application
 repository, board configuration, Arduino installation or ESP-IDF SDK.

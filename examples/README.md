@@ -24,6 +24,13 @@ example-specific limit. `TMP1X2_SERIAL_BAUD` defaults to 115200 for Arduino;
 native ESP-IDF's console baud and routing are selected in its SDK configuration.
 Match the monitor or HIL runner's baud to the firmware console.
 
+`bus` reports the configured pins, clock and transfer timeout
+without I2C. `version` includes a separate `Firmware: git=... tree=... built=...`
+line. Arduino and native IDF builds identify the source checkout; an exported
+archive without Git reports unknown source identity. A host checkout revision
+does not identify an already flashed binary. Use the runner's expected-firmware,
+framework and target checks when recording reproducible results.
+
 ## Arduino / PlatformIO
 
 Build `esp32s3dev` or `esp32s2dev` using the root `platformio.ini`. Open the 115200 baud monitor. The application creates and owns `Wire`; the driver receives only write and repeated-start read callbacks. Only `setup`/`loop` access the driver or I2C. Wire short-read errors retain generic I2C status because the returned byte count cannot prove which phase failed.
@@ -96,6 +103,60 @@ one-shot in shutdown mode. `cancel` and `stop` cancel an active operation withou
 I2C. A possible partial write remains dirty until explicit recovery. Cached
 diagnostics and the input parser remain available while an operation runs.
 
+## Manual owner-operation checks
+
+Automatic polling is enabled by default. `job auto 0` pauses automatic owner
+polling so a host or operator can inspect one exact step. `job step [budget]`
+calls the owner with 0..255 transport callbacks (default 1) and reports the actual
+count. Zero checks deadlines without I2C. `job start init|recover|shutdown|read
+[timeout_ms]` accepts an explicit relative deadline of 1..2147483647 ms; normal
+commands continue to use their existing deadlines. Use a long enough budget for
+manual typing. Cached `job`, `result`, `health`, `settings`, `bus` and counter
+queries remain available. `job auto 1` resumes automatic polling.
+This switch controls owner jobs started directly from commands. Watch, scans
+and diagnostics retain their normal scheduling, including full-test profile
+restoration. Changing the switch or manually stepping during those workflows
+returns BUSY.
+
+For a healthy sensor, first run `mode shutdown` with automatic polling and wait
+for its successful terminal result. Then use this sequence:
+
+```text
+job auto 0
+xfer_reset
+job start read 60000
+job step 0
+xfer_assert 0
+job step 1
+xfer_assert 1 1 0
+job step 1
+xfer_assert 2 2 0
+job
+```
+
+The two transfers read CONFIG and trigger OS. Wait until the reported conversion
+poll time, then step once to check readiness and once to acquire TEMP. Each step
+must report at most one transfer; the terminal result must report a confirmed
+one-shot sample. `xfer_assert 4 4 0` checks the normal completed sequence. If a
+transfer fails, retain the error and counters rather than treating this count as
+proof of a successful conversion. Restore `job auto 1` before automatic tests.
+
+To test cancellation, start an operation in manual mode, step to the intended
+point, capture `xfer_stats`, then run `cancel` and `result`. Cancellation must add
+no transfers. A cancelled operation that may have written leaves configuration
+dirty; enable automatic polling and run `recover` before managed sampling.
+`invalidate` explicitly invalidates local state without a bus transaction, for
+testing an externally reset or replaced sensor. It clears the CLI sample and
+requires recovery; it does not send a device or shared-bus reset.
+
+`xfer_assert <attempts> [<ok> <fail>]` compares the adapter's cached totals with
+exact expected values and emits PASS or FAIL. A saturated counter cannot prove
+an exact count. Adapter traffic includes probes, raw access and scans; driver
+health counts only tracked sensor transfers. These commands make host assertions
+possible without resetting or inferring driver health from adapter totals.
+
+## Sampling and diagnostics
+
 `read` returns the latest sensor register, including possible stale/reset data. Continuous `watch` may report the same conversion repeatedly. Shutdown-mode `watch` schedules one-shots, polls without blocking the CLI, and stops on a 500 ms completion timeout. Every watch/stress run is finite, accepts `stop`, and has bounded input work per loop. A stopped or timed-out watch issues no further background I2C. A pending one-shot remains available to `tryread` or a later watch; a transient read error does not discard it. Manual `start` requires explicit `poll`/`tryread` or joining a watch. Synchronous `readblocking` is explicitly diagnostic and accepts a bounded deadline.
 
 `stress_mix [N]` runs 1..100000 finite cycles (default 100), with separate probe,
@@ -127,6 +188,9 @@ Additional diagnostics:
 | `verbose [0|1]`, `quiet [0|1]` | Control per-sample output; cached samples and run statistics still update |
 | `stats [reset]` | Cached finite-run progress, elapsed time, errors, temperature min/max/mean and health/adapter deltas; reset after sampling stops |
 | `xfer_stats/counters`, `xfer_reset` | Independent adapter counters, including scan/probe/raw traffic; idle reset preserves driver health |
+| `xfer_assert <attempts> [<ok> <fail>]` | Exact cached transfer assertion; no I2C; saturated counters fail exact assertions |
+| `bus` | Cached pins, bus clock and timeout; `version`/`settings` show framework and target |
+| `invalidate` | Bus-silent external-change notification; clears cached CLI sample and requires recovery |
 | `rawread <0..3>`, `rawwrite <1..3> <raw16>`, `rawdump` | Bound-only raw register access without tracked health; writes retain dirty-state uncertainty |
 | `timing`, `convert <raw16>` | Conversion bounds/rates and pure temperature-register decoding |
 | `thcalc <C> [normal/extended]`, `thdecode <raw16> [normal/extended]` | Pure threshold encoding/decoding without I2C |

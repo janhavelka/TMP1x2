@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Audit CLI and test procedures against sixteen sibling I2C libraries; document
+  concrete thermal, ALERT, ARA, reset, shutdown-hold and shared-owner bench tests.
 - Share configuration normalization and CONFIG-word checks across synchronous,
   diagnostic and cooperative paths; remove unused apply state and verification
   options while preserving transport and configuration-trust behavior.
@@ -16,6 +18,10 @@
 
 ### Fixed
 
+- Fail CLI snapshot/settings/self-check diagnostics when successful reads expose
+  configuration drift or untrusted temperature, rather than reporting PASS.
+- Require snapshot trust and actual transfer accounting in HIL results; reject
+  unexpected firmware restarts and leave interrupted restoration unverified.
 - HIL operation results must match both token and final status. Expected
   disconnect errors cannot hide unrelated errors or incomplete responses.
 - Preserve HIL evidence for serial setup failures, bound startup/response
@@ -31,7 +37,6 @@
   threshold fails, separately from the transport failure.
 - Preserve prior temperature-format evidence when synchronous setters or rebinding
   adopt an externally changed EM value; the matching marker can still hold an old payload.
-- Retain an observed low-threshold mismatch when the following high-threshold read fails.
 - Reject CLI setup replacement during active work and preserve the session on invalid
   replacement; clear stale input/results/statistics on successful idle reuse.
 - Preserve observed temperature-format uncertainty through partial observations,
@@ -46,6 +51,12 @@
 
 ### Added
 
+- Shared CLI manual owner polling, operation deadlines, zero/one/multiple-transfer
+  assertions, explicit device-state invalidation and cached bus context.
+- Stable firmware identity output and native ESP-IDF example build metadata,
+  with runner checks that distinguish flashed firmware from host source.
+- HIL suites for invalid-input isolation, raw/tracked registers and owner budgets,
+  cancellation, deadlines and recovery; manual/blocking one-shot workflows.
 - Testing guide with host, sanitizer, framework, package and hardware procedures.
 - Doxygen checks for warnings, local links, public API coverage and private API
   exclusion, with host regressions and a CI job.

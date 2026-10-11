@@ -68,7 +68,7 @@ void Cli::setup(const Platform& platform, const TMP1x2::Config& config) {
   _length = 0; _overflow = false; _invalidInput = false;
   _diagnostic = Diagnostic{}; _lastDiagnostic = Diagnostic{}; _run = RunStats{};
   _lastOperation = TMP1x2::OperationResult{}; _hasOperationResult = false; _lastResultDiagnostic = false;
-  _operationToken = 0; _hasSample = false;
+  _operationToken = 0; _hasSample = false; _jobAuto = true;
   _configuredAlertPin = config.alertPin;
   _configuredGpioRead = config.gpioRead;
   _configuredGpioUser = config.gpioUser;
@@ -81,8 +81,8 @@ void Cli::setup(const Platform& platform, const TMP1x2::Config& config) {
 void Cli::printPrompt() { print("> "); }
 void Cli::feed(char value) {
   if (value == '\r' || value == '\n') {
-    if (_invalidInput) { print("%s[E]%s Invalid control character; command discarded\n", color(31), color(0)); }
-    else if (_overflow) { print("%s[E]%s Input too long; command discarded\n", color(31), color(0)); }
+    if (_invalidInput) { status(TMP1x2::Status::Error(TMP1x2::Err::INVALID_PARAM, "Invalid control character; command discarded")); }
+    else if (_overflow) { status(TMP1x2::Status::Error(TMP1x2::Err::INVALID_PARAM, "Input too long; command discarded")); }
     else if (_length != 0) { _line[_length] = '\0'; processCommand(_line); }
     else return;
     _length = 0;
@@ -123,6 +123,11 @@ void Cli::processCommand(const char* text) {
   const auto invalid = [this]() { status(TMP1x2::Status::Error(TMP1x2::Err::INVALID_PARAM, "invalid command/arguments; see help")); };
   if ((equals(command, "help") || equals(command, "?")) && count == 1) { printHelp(); return; }
   if ((equals(command, "version") || equals(command, "ver")) && count == 1) { printVersion(); return; }
+  if (equals(command, "bus") && count == 1) {
+    print("Bus settings: SDA=%d SCL=%d frequency=%lu Hz timeout=%lu ms (cached application settings; -1/0 means unspecified)\n",
+          _platform.sdaPin, _platform.sclPin, static_cast<unsigned long>(_platform.i2cFrequencyHz),
+          static_cast<unsigned long>(_config.i2cTimeoutMs)); return;
+  }
   if (equals(command, "color")) {
     bool value = _color;
     if (count > 2 || (count == 2 && !boolean(args[1], value))) { invalid(); return; }
@@ -138,19 +143,36 @@ void Cli::processCommand(const char* text) {
   if (equals(command, "stats")) {
     if (count == 1) { printRunStats(); return; }
     if (count != 2 || !equals(args[1], "reset")) { invalid(); return; }
-    if (_watch) { print("Stop sampling before resetting run statistics.\n"); return; }
+    if (_watch) { status(TMP1x2::Status::Error(TMP1x2::Err::BUSY, "Stop sampling before resetting run statistics.")); return; }
     _run = RunStats{};
     print("Run statistics reset; sample, adapter counters, and driver health retained.\n"); return;
   }
   if ((equals(command, "xfer_stats") || equals(command, "counters")) && count == 1) { printTransferStats(); return; }
+  if (equals(command, "xfer_assert")) {
+    uint32_t attempts = 0, successes = 0, failures = 0;
+    if ((count != 2 && count != 4) || !integer(args[1], 0, UINT32_MAX, attempts) ||
+        (count == 4 && (!integer(args[2], 0, UINT32_MAX, successes) || !integer(args[3], 0, UINT32_MAX, failures)))) { invalid(); return; }
+    if (!_platform.transferStats) { status(TMP1x2::Status::Error(TMP1x2::Err::INVALID_CONFIG, "No adapter transfer counters.")); return; }
+    const auto bus = _platform.transferStats(_platform.user);
+    // Saturated counters cannot establish an exact number of callbacks.
+    const bool saturated = bus.attempts == UINT32_MAX || bus.successes == UINT32_MAX || bus.failures == UINT32_MAX;
+    const bool matches = !saturated && bus.attempts == attempts &&
+        (count == 2 || (bus.successes == successes && bus.failures == failures));
+    print("[%s] XFER_ASSERT attempts=%lu ok=%lu fail=%lu expected-attempts=%lu\n", matches ? "PASS" : "FAIL",
+          static_cast<unsigned long>(bus.attempts), static_cast<unsigned long>(bus.successes),
+          static_cast<unsigned long>(bus.failures), static_cast<unsigned long>(attempts));
+    if (count == 4) print("  Expected: ok=%lu fail=%lu\n", static_cast<unsigned long>(successes), static_cast<unsigned long>(failures));
+    if (saturated) print("  Saturated counters cannot prove an exact transfer count.\n");
+    return;
+  }
   if (equals(command, "xfer_reset") && count == 1) {
-    if (activeWork()) { print("Stop active work before resetting adapter counters.\n"); return; }
-    if (!_platform.resetTransferStats) { print("No adapter counter-reset callback.\n"); return; }
+    if (activeWork()) { status(TMP1x2::Status::Error(TMP1x2::Err::BUSY, "Stop active work before resetting adapter counters.")); return; }
+    if (!_platform.resetTransferStats) { status(TMP1x2::Status::Error(TMP1x2::Err::INVALID_CONFIG, "No adapter counter-reset callback.")); return; }
     _platform.resetTransferStats(_platform.user);
     print("Adapter counters reset; driver health retained.\n"); return;
   }
   if (equals(command, "healthreset") && count == 1) {
-    if (activeWork()) { print("Stop active work before resetting health totals.\n"); return; }
+    if (activeWork()) { status(TMP1x2::Status::Error(TMP1x2::Err::BUSY, "Stop active work before resetting health totals.")); return; }
     _device.resetStatistics();
     print("Cumulative driver totals reset; online state, consecutive failures, error and timestamps retained.\n"); return;
   }
@@ -158,6 +180,32 @@ void Cli::processCommand(const char* text) {
     if (count == 1 || (count == 2 && equals(args[1], "status"))) { printOperation(); return; }
     if (count == 2 && equals(args[1], "result")) { printOperationResult(); return; }
     if (count == 2 && equals(args[1], "cancel")) { cancelWork(); return; }
+    if (count >= 2 && equals(args[1], "auto")) {
+      if (count > 3 || (count == 3 && !equals(args[2], "0") && !equals(args[2], "1"))) { invalid(); return; }
+      if (count == 3) {
+        if (_watch || _diagnostic.active) { status(TMP1x2::Status::Error(TMP1x2::Err::BUSY, "Stop watch/diagnostic before changing owner job service.")); return; }
+        _jobAuto = equals(args[2], "1");
+      }
+      print("Job auto: %s\n", _jobAuto ? "on" : "off"); return;
+    }
+    if (count >= 2 && equals(args[1], "step")) {
+      uint32_t budget = 1;
+      if (count > 3 || (count == 3 && !integer(args[2], 0, 255, budget))) { invalid(); return; }
+      if (_watch || _diagnostic.active) { status(TMP1x2::Status::Error(TMP1x2::Err::BUSY, "Stop watch/diagnostic before manual owner polling.")); return; }
+      pollOperation(static_cast<uint8_t>(budget), true); return;
+    }
+    if (count >= 2 && equals(args[1], "start")) {
+      uint32_t timeoutMs = 1000;
+      if ((count != 3 && count != 4) || (count == 4 && !integer(args[3], 1, INT32_MAX, timeoutMs))) { invalid(); return; }
+      TMP1x2::OperationKind kind;
+      if (equals(args[2], "init")) kind = TMP1x2::OperationKind::INITIALIZE;
+      else if (equals(args[2], "recover")) kind = TMP1x2::OperationKind::RECOVER;
+      else if (equals(args[2], "shutdown")) kind = TMP1x2::OperationKind::SHUTDOWN;
+      else if (equals(args[2], "read")) kind = TMP1x2::OperationKind::READ;
+      else { invalid(); return; }
+      if (activeWork()) { status(TMP1x2::Status::Error(TMP1x2::Err::BUSY, "Stop active work before starting another operation.")); return; }
+      startOperation(kind, nullptr, timeoutMs); return;
+    }
     invalid(); return;
   }
   if (equals(command, "result") && count == 1) { printOperationResult(); return; }
@@ -238,9 +286,17 @@ void Cli::processCommand(const char* text) {
       equals(command, "alert") || equals(command, "polarity") || equals(command, "faults") || equals(command, "addr") || equals(command, "model"))) {
     printSettings(); return;
   }
-  if (_diagnostic.active) { print("Diagnostic active; use job, result, or cancel before other hardware commands.\n"); return; }
-  if (_watch) { print("Watch active; use stop before other hardware commands.\n"); return; }
-  if (_device.operationActive()) { print("Operation active; use job, result, or cancel before other hardware commands.\n"); return; }
+  if (_diagnostic.active) { status(TMP1x2::Status::Error(TMP1x2::Err::BUSY, "Diagnostic active; use job, result, or cancel before other hardware commands.")); return; }
+  if (_watch) { status(TMP1x2::Status::Error(TMP1x2::Err::BUSY, "Watch active; use stop before other hardware commands.")); return; }
+  if (_device.operationActive()) { status(TMP1x2::Status::Error(TMP1x2::Err::BUSY, "Operation active; use job, result, or cancel before other hardware commands.")); return; }
+  if (equals(command, "invalidate") && count == 1) {
+    const auto st = _device.invalidateDeviceState(); status(st);
+    if (st.ok()) {
+      _hasSample = false;
+      print("Device state invalidated; configuration recovery required, cached CLI sample cleared.\n");
+    }
+    return;
+  }
   if ((equals(command, "begin") || equals(command, "init")) && count == 1) {
     startOperation(TMP1x2::OperationKind::INITIALIZE);
     return;
@@ -270,7 +326,7 @@ void Cli::processCommand(const char* text) {
   }
   if ((equals(command, "busreset") && count == 1) ||
       (equals(command, "reset") && count == 2 && equals(args[1], "all"))) {
-    if (!_platform.busWrite) { print("No general-call write adapter.\n"); return; }
+    if (!_platform.busWrite) { status(TMP1x2::Status::Error(TMP1x2::Err::INVALID_CONFIG, "No general-call write adapter.")); return; }
     if (_device.isBound()) {
       const auto st = _device.invalidateDeviceState();
       if (!st.ok()) { status(st); return; }
@@ -298,7 +354,8 @@ void Cli::processCommand(const char* text) {
     return;
   }
   if (equals(command, "addr") || equals(command, "model")) {
-    if (count != 2 || _device.state() != TMP1x2::DriverState::UNINIT) { print("Use end before selecting address/model.\n"); return; }
+    if (count != 2) { invalid(); return; }
+    if (_device.state() != TMP1x2::DriverState::UNINIT) { status(TMP1x2::Status::Error(TMP1x2::Err::BUSY, "Use end before selecting address/model.")); return; }
     auto selected = _config;
     if (equals(command, "addr")) {
       uint32_t value = 0;

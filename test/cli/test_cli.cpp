@@ -719,6 +719,155 @@ int main(int argc, char** argv) {
     bus.output.clear(); shell.processCommand("read");
     CHECK(bus.output.find("25.000") != std::string::npos);
   }
+  {
+    Fixture manual; tmp1x2_cli::Cli shell;
+    auto platform = manual.platform(); platform.sdaPin = 8; platform.sclPin = 9; platform.i2cFrequencyHz = 400000;
+    shell.setup(platform, manual.config()); shell.processCommand("color off");
+    shell.processCommand("job auto 0");
+    for (unsigned i = 0; i < 20; ++i) { ++manual.timeMs; shell.tick(); }
+    CHECK(manual.transfers == 0);
+    manual.output.clear(); shell.processCommand("job step 0");
+    CHECK(manual.transfers == 0);
+    CHECK(manual.output.find("Poll: budget=0 transfers=0 done=no") != std::string::npos);
+    shell.processCommand("job step"); CHECK(manual.transfers == 1);
+    const unsigned one = manual.transfers;
+    shell.processCommand("job step 3");
+    CHECK(manual.transfers > one && manual.transfers - one <= 3);
+    manual.output.clear(); shell.processCommand("job step 255");
+    CHECK(manual.output.find("kind=INITIALIZE") != std::string::npos);
+    CHECK(manual.output.find("[I] OK") != std::string::npos);
+    const unsigned initialized = manual.transfers;
+    manual.output.clear(); shell.processCommand("bus"); shell.processCommand("version");
+    CHECK(manual.transfers == initialized);
+    CHECK(manual.output.find("Bus settings: SDA=8 SCL=9 frequency=400000 Hz") != std::string::npos);
+    CHECK(manual.output.find("Firmware: git=") != std::string::npos);
+    shell.processCommand("job start read 2147483647");
+    shell.tick(); CHECK(manual.transfers == initialized);
+    manual.output.clear(); shell.processCommand("job step 1");
+    CHECK(manual.transfers == initialized + 1);
+    CHECK(manual.output.find("Poll: budget=1 transfers=1 done=yes") != std::string::npos);
+    CHECK(manual.output.find("Result sample: 25.0000 C") != std::string::npos);
+    // Rejected invalidation preserves a valid cached sample and the active job.
+    shell.processCommand("job start read 10000");
+    const unsigned beforeCancel = manual.transfers;
+    manual.output.clear(); shell.processCommand("invalidate"); shell.processCommand("sample");
+    CHECK(manual.output.find("[E] BUSY") != std::string::npos);
+    CHECK(manual.output.find("Temperature: 25.0000 C") != std::string::npos);
+    shell.processCommand("job cancel"); CHECK(manual.transfers == beforeCancel);
+    manual.output.clear(); shell.processCommand("result");
+    CHECK(manual.output.find("[E] CANCELLED") != std::string::npos);
+    for (const char* command : {"job auto 2", "job auto on", "job auto 0 extra", "job step -1", "job step 256",
+         "job step 1 extra", "job start", "job start unknown", "job start read 0", "job start read 2147483648",
+         "job start init -1", "job start read 1 extra"}) {
+      manual.output.clear(); shell.processCommand(command);
+      CHECK(manual.output.find("[E] INVALID_PARAM") != std::string::npos);
+      CHECK(manual.transfers == beforeCancel);
+    }
+    // A paused job remains paused even after expiry. Its explicit zero-budget
+    // poll reports the wrapped deadline without starting a physical transfer.
+    manual.timeMs = UINT32_MAX - 5U;
+    shell.processCommand("job start read 10");
+    manual.timeMs += 9U; manual.output.clear(); shell.processCommand("job step 0");
+    CHECK(manual.output.find("done=no") != std::string::npos);
+    ++manual.timeMs; shell.tick(); CHECK(manual.transfers == beforeCancel);
+    manual.output.clear(); shell.processCommand("job step 0");
+    CHECK(manual.transfers == beforeCancel);
+    CHECK(manual.output.find("done=yes") != std::string::npos);
+    CHECK(manual.output.find("[E] OPERATION_TIMEOUT") != std::string::npos);
+    shell.processCommand("job start read 1000"); shell.processCommand("job auto 1"); shell.tick();
+    CHECK(manual.transfers == beforeCancel + 1);
+    shell.processCommand("job auto 0");
+    // Diagnostics own automatic scheduling; disabling ordinary job service
+    // cannot strand a full configuration test or its baseline restoration.
+    shell.processCommand("selftest full");
+    const unsigned beforeBusy = manual.transfers;
+    manual.output.clear();
+    for (const char* command : {"job step 1", "job auto 1", "job start init", "invalidate"}) shell.processCommand(command);
+    CHECK(manual.transfers == beforeBusy && manual.output.find("[E] BUSY") != std::string::npos);
+    shell.tick(); shell.processCommand("stop"); manual.settle(shell);
+    CHECK(manual.output.find("Baseline restoration: verified") != std::string::npos);
+    manual.output.clear(); shell.processCommand("job auto");
+    CHECK(manual.output.find("Job auto: off") != std::string::npos);
+    shell.processCommand("watch 1 1");
+    const unsigned beforeWatch = manual.transfers;
+    manual.output.clear(); shell.processCommand("job step 255");
+    CHECK(manual.transfers == beforeWatch && manual.output.find("[E] BUSY") != std::string::npos);
+    shell.processCommand("stop");
+    // All exposed lifecycle starts admit without I2C and honor explicit polling.
+    for (const char* command : {"job start shutdown 10000", "job start recover 10000", "job start init 10000"}) {
+      const unsigned beforeStart = manual.transfers;
+      shell.processCommand(command); CHECK(manual.transfers == beforeStart);
+      manual.output.clear(); shell.processCommand("cancel"); CHECK(manual.transfers == beforeStart);
+      CHECK(manual.output.find("[E] CANCELLED") != std::string::npos);
+    }
+  }
+  {
+    Fixture invalidation; tmp1x2_cli::Cli shell;
+    shell.setup(invalidation.platform(), invalidation.config()); invalidation.settle(shell); shell.processCommand("color off");
+    shell.processCommand("read"); invalidation.output.clear(); shell.processCommand("health");
+    const auto health = invalidation.output.substr(0, invalidation.output.find('\n'));
+    const unsigned before = invalidation.transfers;
+    invalidation.output.clear(); shell.processCommand("invalidate"); shell.processCommand("sample");
+    CHECK(invalidation.transfers == before);
+    CHECK(invalidation.output.find("[I] OK") != std::string::npos);
+    CHECK(invalidation.output.find("No cached CLI sample") != std::string::npos);
+    invalidation.output.clear(); shell.processCommand("health");
+    CHECK(invalidation.output.substr(0, invalidation.output.find('\n')) == health);
+    CHECK(invalidation.output.find("dirty=yes") != std::string::npos);
+    shell.processCommand("read"); CHECK(invalidation.transfers == before);
+    shell.processCommand("recover"); invalidation.settle(shell);
+    invalidation.output.clear(); shell.processCommand("read");
+    CHECK(invalidation.output.find("Temperature: 25.0000 C") != std::string::npos);
+    shell.processCommand("xfer_reset");
+    const unsigned reset = invalidation.transfers;
+    invalidation.output.clear(); shell.processCommand("xfer_assert 0"); shell.processCommand("xfer_assert 0 0 0");
+    CHECK(invalidation.transfers == reset);
+    CHECK(invalidation.output.find("[PASS] XFER_ASSERT") != std::string::npos);
+    invalidation.output.clear(); shell.processCommand("xfer_assert 1");
+    CHECK(invalidation.output.find("[FAIL] XFER_ASSERT") != std::string::npos);
+    shell.processCommand("read"); invalidation.readFailures = 1; shell.processCommand("read");
+    const unsigned counted = invalidation.transfers;
+    invalidation.output.clear(); shell.processCommand("xfer_assert 2 1 1");
+    CHECK(invalidation.output.find("[PASS] XFER_ASSERT attempts=2 ok=1 fail=1") != std::string::npos);
+    CHECK(invalidation.transfers == counted);
+    invalidation.output.clear(); shell.processCommand("xfer_assert 2 2 0");
+    CHECK(invalidation.output.find("[FAIL] XFER_ASSERT") != std::string::npos);
+    for (const char* command : {"xfer_assert", "xfer_assert -1", "xfer_assert 4294967296", "xfer_assert 0 0", "xfer_assert 0 0 0 extra"}) {
+      invalidation.output.clear(); shell.processCommand(command);
+      CHECK(invalidation.output.find("[E] INVALID_PARAM") != std::string::npos);
+      CHECK(invalidation.transfers == counted);
+    }
+    invalidation.adapter.attempts = UINT32_MAX;
+    invalidation.output.clear(); shell.processCommand("xfer_assert 4294967295");
+    CHECK(invalidation.output.find("[FAIL] XFER_ASSERT") != std::string::npos);
+    CHECK(invalidation.output.find("Saturated counters") != std::string::npos);
+  }
+  {
+    // Successful register transport is not a passing configuration diagnostic.
+    for (unsigned reg : {0U, 1U, 2U, 3U}) {
+      Fixture mismatch; tmp1x2_cli::Cli shell;
+      shell.setup(mismatch.platform(), mismatch.config()); mismatch.settle(shell); shell.processCommand("color off");
+      if (reg == 0) mismatch.regs[0] = 0x0C81; // Stale format marker/payload.
+      else mismatch.regs[reg] ^= 0x0040U;
+      const unsigned writes = mismatch.writes;
+      mismatch.output.clear(); shell.processCommand("snapshot read"); shell.tick();
+      CHECK(mismatch.writes == writes);
+      CHECK(mismatch.output.find("Snapshot: CONFIG=") != std::string::npos);
+      CHECK(mismatch.output.find("[FAIL] coherent register snapshot") != std::string::npos);
+      CHECK(mismatch.output.find("complete pass=0 fail=1 skip=0") != std::string::npos);
+      CHECK(mismatch.output.find("temperature-trusted=no") != std::string::npos);
+    }
+    Fixture late; tmp1x2_cli::Cli shell;
+    shell.setup(late.platform(), late.config()); late.settle(shell); shell.processCommand("color off");
+    late.output.clear(); shell.processCommand("settings read"); shell.tick(); shell.tick();
+    // Config and complete verification passed, then an external write appears
+    // during the final thresholds phase. The raw observation must remain shown.
+    late.regs[2] ^= 0x0040U;
+    shell.tick();
+    CHECK(late.output.find("Hardware thresholds:") != std::string::npos);
+    CHECK(late.output.find("[FAIL] decoded thresholds and ordering") != std::string::npos);
+    CHECK(late.output.find("complete pass=2 fail=1 skip=0") != std::string::npos);
+  }
   std::puts("CLI parsing, diagnostics, full configuration exercise/restoration, bus operations, field helpers and cooperative workflows passed");
   return 0;
 }

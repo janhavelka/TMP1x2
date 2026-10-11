@@ -1,6 +1,13 @@
 # Local library comparison
 
-Re-audited on 2026-09-26 in the sibling `Projects/` directory. The inventory covers all 16 top-level standalone I2C libraries found by manifest and public-header inspection. Application repositories, archived copies, PlatformIO dependencies and worktrees are not counted as separate libraries. `EEPROM_24Cxx/` is currently empty. See the [audit findings and fixes](audit-2026-09-26.md).
+Re-audited on 2026-10-11 in the sibling `Projects/` directory, starting from
+TMP1x2 `c8c93dd`. The inventory covers all 16 top-level sibling I2C libraries
+found by manifest and public-header inspection. Application repositories,
+archived copies, PlatformIO dependencies and worktrees are not separate
+libraries. AT21CS11 uses a single-wire interface; ADS1261 and MAX31865 use SPI.
+Those protocols are outside this comparison. No additional standalone I2C
+library was found. The earlier [audit findings](audit-2026-09-26.md) remain
+historical evidence.
 
 | Library | Device / protocol | Relevance to TMP102/TMP112 |
 | --- | --- | --- |
@@ -25,6 +32,85 @@ Other peripheral protocols and application/board projects were outside the I2C
 comparison. This inventory is background design research; none of these
 repositories is a build or runtime dependency of TMP1x2.
 
+## Inspected revisions and executable evidence
+
+All sixteen sibling worktrees were clean on `main`, tracking their local
+`origin/main` reference, at the revisions below. The audit read their manifests,
+actual command dispatch/help, shared helpers, tests and hardware runners; it did
+not fetch or modify the sibling repositories. Paths below are relative to the
+named sibling repository. They identify inspected source, not build or hardware
+results for TMP1x2.
+
+| Library / revision | Actual command implementation | Testing and applicable evidence |
+| --- | --- | --- |
+| OPT4001 `082754b` | `examples/01_basic_bringup_cli/main.cpp`: full configuration, cached health, raw words, ALERT and cooperative jobs; `examples/common/HealthDiag.h` monitors cached health | `tools/hil_opt4001_runner.py`, `tools/check_cli_contract.py`; useful terminal layout and register/threshold workflows, but see the runner grammar limitation below |
+| ADS1115 `1390991` | `examples/01_basic_bringup_cli/main.cpp`: configuration, thresholds, registers and `own` lifecycle/read/poll/cancel commands | `tools/run_i2c_hil.py`, `docs/ADS1115_HARDWARE_VALIDATION_PLAN.md`: firmware identity, bus-silent snapshots and absent-address procedures; Arduino owner commands are not mirrored by its native IDF CLI |
+| SHT3x-main `93ec054` | `examples/common/Sht3xCli.cpp`: shared command processor, comprehensive help, manual job stepping and `xfer_assert` | `tools/run_sht3x_hil.py`: admission/progress transfer assertions and expected firmware commit; strong precedent for shared-framework behavior |
+| BME280 `f66c2ee` | `examples/01_basic_bringup_cli/main.cpp`: complete staged settings, validation, apply, invalidation and job controls | `tools/run_i2c_hil.py`: validation silence, disconnect/invalidation, staged settings, cancellation/budget checks and firmware provenance |
+| INA228 `4e10c70` | `examples/01_basic_bringup_cli/main.cpp`, `docs/CLI.md`: configuration, measurements, registers, diagnostics and framed test commands | `tools/run_i2c_hil.py`: expected firmware provenance and exact zero/one/multiple-transfer assertions |
+| INA3221 `1ad5c69` | `examples/01_basic_bringup_cli/main.cpp`: `job auto`, `job step`, `hilrun`, selftest and cooperative stress | `tools/hil_cli_runner.py`: zero/one budgets, cancellation, retained results and terminal stress checks |
+| LDC1614 `6ec9043` | `examples/common/Ldc1614Cli.cpp`, `examples/esp_idf/basic/main/Ldc1614IdfCli.cpp`: separate front ends with command metadata, detailed help, staged profiles, bus/state views, invalidation, jobs and bounded stress/soak | `tools/ldc1614_cli_contract.py`, `tools/ldc1614_hil_runner.py`, `test/test_cli.cpp`: output contracts, firmware identity, invalid-input state/transfer fences, correlated completion and mode/soak matrices |
+| LSM6DS3TR `9edafd3` | `examples/01_basic_bringup_cli/main.cpp`, `examples/idf/basic/main/main.cpp`, `examples/common/ProfileCli.h`: staged profile, tokened operations, raw access and reconciliation | `tools/run_hil.py`: invalid-command transport/bus/profile invariants; `examples/02_owner_soak/main.cpp` and `tools/run_owner_soak.py` keep long soak output bounded |
+| MB85RC `f888671` | `examples/01_basic_bringup_cli/main.cpp`, `examples/espidf_basic/main/main.cpp`, `examples/common/DiagnosticCore.h`: memory diagnostics, mode capabilities, staged transfers, scratch backup/restore and stress | `tools/_contract_data.py`, `tools/hil_runner.py`: framework command checks, malformed inputs, verified scratch restoration and bounded soak |
+| 24Cxx `c74c1c6` | `examples/common/Eeprom24CxxCli.cpp`: shared CLI, strict parsing, bounded jobs, staged timeout/offline settings, counters and explicit scratch tests | `test/test_cli/test_cli.cpp`, `docs/hardware-validation.md`: executable parser/operation tests and physical procedures; no standalone serial HIL runner found |
+| MCP45HVX1 `9573f5e` | `examples/01_basic_bringup_cli/main.cpp`, `tools/contract_common.py`: full wiper/TCON/register access and detailed command help, with safe/output-changing selftests | `tests/test_arduino_cli.cpp`, `tests/test_idf_console.cpp`, `tools/run_hil_mcp45hvx1.py`: parser execution, safe/mutating test groups and soak |
+| PCA9555 `386fcd5` | `examples/01_basic_bringup_cli/main.cpp`: pin/port/mask/register controls, explicit mutation, restoration, selftest and stress | `tools/run_i2c_hil.py`, `docs/hardware_validation.md`: strict output and rejection checks; GPIO electrical behavior needs a fixture |
+| RV3032-C7 `4dd51d1` | `examples/01_basic_bringup_cli/main.cpp`: calendar, temperature, alarms, flags, registers, RAM/EEPROM and backup provisioning | `tools/hil_cli_runner.py`, `docs/VERIFICATION.md`: functional/soak matrices, firmware metadata and complete health parsing; persistence/calendar tests are RTC-specific |
+| SCD41 `70f8d80` | `examples/01_basic_bringup_cli/main.cpp`, `examples/common/DiagnosticWorkflow.h`: lifecycle, measurements, all configuration/calibration commands, raw protocol and mode-valid diagnostic jobs | `tools/scd41_hil_runner.py`, `docs/validation/hardware-hil.md`: operation/result correlation and explicit slow or nonvolatile procedures |
+| SSD1315 `9c4d2a6` | `examples/01_basic_bringup_cli/main.cpp`, `examples/espidf_basic/main/main.cpp`: controller/graphics access, partial flush, selftest, stress and compact `soakstep` | `tools/run_ssd1315_hil.py`, `docs/SSD1315_HIL_RUNBOOK.md`: firmware metadata and functional/retention/soak matrices; optical checks remain separate |
+| TCA9548A `07acf36` | `examples/01_basic_bringup_cli/main.cpp`, `examples/espidf_basic/main/main.cpp`: route masks, cached evidence, invalidation, lifecycle and diagnostics | `tools/tca9548a_hil.py`, `docs/VALIDATION_STATUS.md`: exact mask readback, verified restoration, all-mask and branch-isolation tests; host checkout identity is explicitly not flashed firmware identity |
+
+The six closest sensor repositories' CLI contract checkers passed during the
+read-only audit. This does not prove complete parity. In ADS1115, the checker
+inspects the Arduino CLI while native IDF lacks the Arduino `own` command
+routes. In OPT4001, the serial runner contains older conversion-time/range/mode
+command forms that differ from the current native IDF dispatcher. Actual
+dispatch and executable output therefore take precedence over a passing text
+checker or an old runner command list. TMP1x2 keeps one shared command processor
+and runs its serial parser against that processor's native fixture.
+
+## Transferable audit findings
+
+The common requirement is access to every applicable chip feature, observable
+operation state, strict inputs and repeatable tests. A command with the same
+name can have different side effects across chips: a peer's `selftest` may read
+registers, drive outputs, consume EEPROM endurance or run an internal chip test.
+TMP1x2 documents its read-only checks separately from the full configuration
+exercise and shared-bus maintenance.
+
+- **Owner scheduling:** SHT3x, INA228 and INA3221 expose transfer-budget and
+  cancellation evidence. Manual stepping and exact counter assertions make the
+  TMP owner's zero/one-transfer contracts reviewable from the CLI.
+- **Configuration trust:** BME280, LDC1614 and TCA9548A expose explicit local
+  invalidation. Cached trust must remain separate from successful transport;
+  raw/out-of-band writes need verified recovery before trusted sampling.
+- **Strict command admission:** LSM6DS3TR and LDC1614 hardware runners compare
+  state and transfer counters around malformed-input matrices. Host parser
+  tests and serial tests cover different boundaries; neither should accept
+  rejection text as proof that no I2C occurred.
+- **Reproducible reports:** distinguish host source revision from flashed
+  firmware. At the inspected TMP baseline, Arduino already printed Git metadata
+  through `TMP1X2_VERSION_FULL`; native IDF left those macros unknown. The native
+  example now refreshes an example-only identity header at every build, including
+  incremental edits. Native CMake and the PlatformIO pre-build script use the
+  same generator; only CLI output includes the result. Source archives retain
+  unknown Git identity even when
+  extracted inside another repository. The core has no Git/build dependency.
+- **Diagnostic context:** cached pins, frequency, transport backend and timeout
+  make a transcript useful for reproducing a board setup. Adapter counters
+  include probes/raw traffic and must remain distinct from tracked health.
+- **Stress and restoration:** finite counts, bounded durations, retained
+  results, cancellation and verified cleanup are useful across libraries.
+  Successful serial traffic is not thermal accuracy, exact ALERT timing,
+  electrical fault tolerance or validation of another board/framework.
+
+The TMP chip provides no identity register, CRC, FIFO, EEPROM, calibration
+offset, channel mux or graphics interface. Those peer commands are excluded
+deliberately. TMP general-call reset and SMBus Alert Response retain their own
+explicit bus-wide/acknowledgement semantics. Host-controlled soak and physical
+fault/thermal fixtures complement the existing configuration, one-shot, stress
+and restoration tests; there is no universal sibling test that certifies a chip.
+
 ## Chosen conventions
 
 OPT4001 supplies the repository shape and terminal presentation. ADS1115 supplies the most directly comparable register-transport contract. SHT3x demonstrates how one framework-neutral command processor can give identical Arduino/native IDF CLI behavior without compiling Arduino facades into IDF. Sensor protocol facts must come from TI rather than any sibling chip driver.
@@ -39,12 +125,17 @@ OPT4001 supplies the repository shape and terminal presentation. ADS1115 supplie
 - `I2cWriteFn = Status (*)(uint8_t, const uint8_t*, size_t, uint32_t timeoutMs, void*)`; `I2cWriteReadFn` adds TX/RX buffers and lengths and performs one atomic repeated-start transfer. Caller owns locking, bus lifecycle, pins, clock frequency, timeout enforcement, scheduling and recovery. Preserve meaningful transport errors; do not invent NACK phase information.
 - Bus-silent binding, admission, cancellation and end; one owner operation per instance with caller-driven polls. Initialization, configuration, recovery, shutdown and read jobs have transfer budgets, deadlines and retained results. Synchronous conveniences share the same configuration state machine. See [owner operations](owner-operations.md) and [integration](integration.md). No automatic general-call reset or hidden retry.
 - Four health states: `UNINIT`, `READY`, `DEGRADED`, `OFFLINE`; saturating success/failure counters, consecutive failures, last success/error times and last error. Configuration trust is separate from transport health. Diagnostic probes do not alter tracked driver health. Bus-adapter counters include diagnostic traffic and therefore differ from driver counters.
-- OPT4001 help uses cyan `=== TMP1x2 CLI Help ===`, green `[Common]`, `[Data]`, `[Configuration]`, `[Registers]`, `[Diagnostics]` sections; cyan left-aligned command column width 32; plain descriptions; prompt `> `. ANSI reset `ESC[0m`, red 31, green 32, yellow 33, blue 34, cyan 36, gray 90. `color [0|1|off|on]` disables all ANSI styling. Severity tags alone are colored. Health is green for READY, yellow for degraded/uninitialized, red for offline/errors.
+- TMP1x2 adopts the OPT4001 help style: cyan `=== TMP1x2 CLI Help ===`, green `[Common]`, `[Data]`, `[Configuration]`, `[Registers]`, `[Diagnostics]` sections; cyan left-aligned command column width 32; plain descriptions; prompt `> `. ANSI reset `ESC[0m`, red 31, green 32, yellow 33, cyan 36 and gray 90. `color [0|1|off|on]` disables styling. Health is green for READY, yellow for degraded/uninitialized, red for offline/errors.
 - Common CLI aliases include `help/?`, `version/ver`, `init/begin`, `drv/health`, `cfg/settings`, `reg/rreg`, plus scan, probe, recover, end, cached sample, finite watch/stress, stop and raw register diagnostics. Job/result/cancel commands expose cooperative progress; quiet mode, run statistics, counter reset and optional ALERT GPIO mirror peer diagnostics. Chip-specific commands follow actual TMP capabilities; no fictitious chip ID or CRC command.
 - Native IDF examples use `app_main`, `driver/i2c_master.h`, `esp_timer` and task timing; no Arduino compatibility layer. Both adapters exercise the same command processor.
 - Sibling build conventions: `library.json` as version source, generated version header and component manifest, C++17 CMake component, PlatformIO S2/S3 Arduino environments and native tests, Windows `scripts/pio.cmd`, explicit framework-free compilation, CLI-contract checks. Hardware validation is a separate claim from builds and simulated transport tests.
 
-These sibling libraries deliberately differ in health gating and cooperative method names. Some use a latched OFFLINE state; LDC1614 and LSM6DS3TR expose transport statistics alongside separate operation/configuration state. Status enum ordinals are not a shared ABI, and device-specific errors vary. Matching every historical API byte-for-byte is neither possible nor appropriate; TMP1x2 follows the common conventions while keeping its sensor-specific protocol explicit.
+These sibling libraries differ in health vocabulary, lifecycle semantics and
+cooperative method names. LDC1614 and LSM6DS3TR expose transport statistics
+alongside separate operation/configuration state. Status enum ordinals are not
+a shared ABI, and device-specific errors vary. Matching every historical API
+byte-for-byte is neither possible nor appropriate; TMP1x2 follows the common
+conventions while keeping its sensor protocol explicit.
 
 The [feature coverage matrix](feature-coverage.md) also maps canonical initializer,
 settings/sample and register-word names, field helpers, full configuration tests

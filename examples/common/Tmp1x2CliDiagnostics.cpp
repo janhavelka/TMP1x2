@@ -4,6 +4,12 @@
 
 namespace tmp1x2_cli {
 namespace {
+TMP1x2::Status observedStatus(const TMP1x2::TMP1x2& device, TMP1x2::Status result) {
+  // Successful diagnostic transport can still expose an untrusted profile.
+  if (!result.ok() || !device.hardwareConfigDirty()) return result;
+  const auto dirty = device.hardwareConfigDirtyError();
+  return dirty.ok() ? TMP1x2::Status::Error(TMP1x2::Err::CONFIG_MISMATCH, "configuration remains dirty") : dirty;
+}
 const char* configCaseName(uint8_t phase) {
   static const char* names[] = {"rate 0.25 Hz", "rate 1 Hz", "rate 4 Hz", "rate 8 Hz",
     "continuous mode", "shutdown mode", "normal format", "extended format",
@@ -33,7 +39,7 @@ void Cli::recordRunResult(TMP1x2::Status result, const TMP1x2::Sample& sample, b
     if (_verbose) status(result);
   }
 }
-TMP1x2::Status Cli::startOperation(TMP1x2::OperationKind kind, const TMP1x2::Config* desired) {
+TMP1x2::Status Cli::startOperation(TMP1x2::OperationKind kind, const TMP1x2::Config* desired, uint32_t timeoutMs) {
   if (!_platform.nowMs && !_config.nowMs) {
     const auto st = TMP1x2::Status::Error(TMP1x2::Err::INVALID_CONFIG, "cooperative operations require a monotonic clock");
     status(st); return st;
@@ -43,15 +49,15 @@ TMP1x2::Status Cli::startOperation(TMP1x2::OperationKind kind, const TMP1x2::Con
     st = _device.bind(_config);
     if (!st.ok()) { status(st); return st; }
     _config = _device.getConfig();
-    st = _device.startInitialize(now(), 1000, _operationToken);
+    st = _device.startInitialize(now(), timeoutMs, _operationToken);
   } else if (kind == TMP1x2::OperationKind::CONFIGURE && desired) {
-    st = _device.startConfigure(*desired, now(), 1000, _operationToken);
+    st = _device.startConfigure(*desired, now(), timeoutMs, _operationToken);
   } else if (kind == TMP1x2::OperationKind::RECOVER) {
-    st = _device.startRecover(now(), 1000, _operationToken);
+    st = _device.startRecover(now(), timeoutMs, _operationToken);
   } else if (kind == TMP1x2::OperationKind::SHUTDOWN) {
-    st = _device.startShutdown(now(), 1000, _operationToken);
+    st = _device.startShutdown(now(), timeoutMs, _operationToken);
   } else if (kind == TMP1x2::OperationKind::READ) {
-    st = _device.startRead(now(), 1000, _operationToken);
+    st = _device.startRead(now(), timeoutMs, _operationToken);
   } else st = TMP1x2::Status::Error(TMP1x2::Err::INVALID_PARAM, "unknown operation");
   if (st.inProgress()) {
     if (kind != TMP1x2::OperationKind::READ) _hasSample = false;
@@ -60,6 +66,17 @@ TMP1x2::Status Cli::startOperation(TMP1x2::OperationKind kind, const TMP1x2::Con
   }
   status(st);
   return st;
+}
+void Cli::pollOperation(uint8_t budget, bool report) {
+  const auto result = _device.poll(now(), budget);
+  if (_device.isBound()) _config = _device.getConfig();
+  if (report) {
+    print("Poll: budget=%u transfers=%u done=%s next=%lu ms\n",
+          static_cast<unsigned>(budget), static_cast<unsigned>(result.transfers),
+          result.done ? "yes" : "no", static_cast<unsigned long>(result.nextPollMs));
+    status(result.status);
+  }
+  finishOperation();
 }
 void Cli::finishOperation() {
   if (!_device.resultPending()) return;
@@ -78,9 +95,9 @@ void Cli::finishOperation() {
 }
 bool Cli::activeWork() const { return _watch || _diagnostic.active || _device.operationActive(); }
 void Cli::startDiagnostic(DiagnosticKind kind) {
-  if (activeWork()) { print("Stop active work before starting another diagnostic.\n"); return; }
+  if (activeWork()) { status(TMP1x2::Status::Error(TMP1x2::Err::BUSY, "Stop active work before starting another diagnostic.")); return; }
   if ((kind == DiagnosticKind::SCAN || kind == DiagnosticKind::DISCOVER) && !_platform.probeAddress) {
-    print("No scan adapter.\n"); return;
+    status(TMP1x2::Status::Error(TMP1x2::Err::INVALID_CONFIG, "No scan adapter.")); return;
   }
   if (kind == DiagnosticKind::CONFIGTEST && !_device.isInitialized()) {
     status(TMP1x2::Status::Error(TMP1x2::Err::NOT_INITIALIZED, "Initialize before the full configuration test")); return;
@@ -238,18 +255,18 @@ void Cli::tickDiagnostic() {
                     phase == 7 ? "physical ALERT GPIO" : "coherent register snapshot", st, "driver uninitialized");
   } else if (phase == 3) {
     TMP1x2::ConfigurationInfo info{}; st = _device.readConfiguration(info);
-    diagnosticCheck("live configuration fixed bits", st);
     if (st.ok()) print("  CONFIG=0x%04X mode=%s rate=%s EM=%u thermostat=%s polarity=%s faults=%s AL=%u active=%u\n",
                        static_cast<unsigned>(info.raw), TMP1x2::toString(info.mode), TMP1x2::toString(info.conversionRate),
                        info.extendedMode ? 1U : 0U, TMP1x2::toString(info.alertMode), TMP1x2::toString(info.alertPolarity),
                        TMP1x2::toString(info.faultQueue), info.alert ? 1U : 0U, info.alertActive ? 1U : 0U);
+    diagnosticCheck("live configuration and trust", observedStatus(_device, st));
   } else if (phase == 4) {
     diagnosticCheck("desired configuration and threshold readback", _device.verifyConfiguration());
   } else if (phase == 5) {
     float low = 0, high = 0; st = _device.readThresholds(low, high);
-    if (st.ok() && low > high) st = TMP1x2::Status::Error(TMP1x2::Err::CONFIG_MISMATCH, "Threshold ordering invalid");
-    diagnosticCheck("decoded thresholds and ordering", st);
     if (st.ok()) print("  Hardware thresholds: low=%.4f C high=%.4f C\n", static_cast<double>(low), static_cast<double>(high));
+    if (st.ok() && low > high) st = TMP1x2::Status::Error(TMP1x2::Err::CONFIG_MISMATCH, "Threshold ordering invalid");
+    diagnosticCheck("decoded thresholds and ordering", observedStatus(_device, st));
   } else if (phase == 6) {
     TMP1x2::Sample sample{}; st = _device.readSample(sample);
     diagnosticCheck("temperature register format", st);
@@ -263,13 +280,16 @@ void Cli::tickDiagnostic() {
     }
   } else {
     TMP1x2::RegisterSnapshot snapshot{}; st = _device.readSnapshot(snapshot);
-    diagnosticCheck("coherent register snapshot", st);
-    if (st.ok())
+    if (st.ok()) {
       print("  Snapshot: CONFIG=0x%04X TEMP=0x%04X TLOW=0x%04X THIGH=0x%04X config-match=%s thresholds-match=%s temperature-trusted=%s\n",
             static_cast<unsigned>(snapshot.configuration.raw), static_cast<unsigned>(snapshot.rawTemperature),
             static_cast<unsigned>(snapshot.rawLowThreshold), static_cast<unsigned>(snapshot.rawHighThreshold),
             snapshot.configurationMatchesDesired ? "yes" : "no", snapshot.thresholdsMatchDesired ? "yes" : "no",
             snapshot.temperatureTrusted ? "yes" : "no");
+      if (!snapshot.configurationMatchesDesired || !snapshot.thresholdsMatchDesired || !snapshot.temperatureTrusted)
+        st = TMP1x2::Status::Error(TMP1x2::Err::CONFIG_MISMATCH, "Snapshot differs from the desired profile or temperature is untrusted");
+    }
+    diagnosticCheck("coherent register snapshot", observedStatus(_device, st));
   }
   ++_diagnostic.phase;
   if (_diagnostic.phase == (_diagnostic.kind == DiagnosticKind::SNAPSHOT ? 1 : settings ? 3 : 9)) finishDiagnostic();
@@ -328,10 +348,7 @@ void Cli::tickMixed(uint32_t nowMs) {
     }
     // Observer APIs return readable hardware values while separately latching
     // trust mismatches. A diagnostic check must report that mismatch explicitly.
-    if (_mixedPhase != 0 && st.ok() && _device.hardwareConfigDirty()) {
-      st = _device.hardwareConfigDirtyError();
-      if (st.ok()) st = TMP1x2::Status::Error(TMP1x2::Err::CONFIG_MISMATCH, "configuration remains dirty");
-    }
+    if (_mixedPhase != 0) st = observedStatus(_device, st);
     if (_verbose) print("Mixed %s: ", label);
     recordRunResult(st, {}, false);
   }
@@ -346,9 +363,9 @@ void Cli::tick() {
   if (_device.operationActive()) {
     // One physical transfer per loop; conversion settling uses timestamps and
     // leaves command input, cached diagnostics, and cancellation responsive.
-    (void)_device.poll(nowMs, 1);
-    if (_device.isBound()) _config = _device.getConfig();
-    finishOperation();
+    // Explicit diagnostics own their scheduling, including full-test restore.
+    // Manual mode pauses only owner jobs admitted directly through the CLI.
+    if (_jobAuto || _diagnostic.active) pollOperation(1);
     return;
   }
   if (_platform.nowMs) (void)_device.poll(nowMs, 0);

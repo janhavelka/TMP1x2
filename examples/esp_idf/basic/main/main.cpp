@@ -147,6 +147,9 @@ extern "C" void app_main() {
   platform.resetTransferStats = resetStats;
   platform.busWrite = writeI2c;
   platform.busReceive = receiveI2c;
+  platform.sdaPin = board::I2C_SDA;
+  platform.sclPin = board::I2C_SCL;
+  platform.i2cFrequencyHz = board::I2C_FREQUENCY_HZ;
   platform.framework = "native-esp-idf";
   platform.frameworkVersion = esp_get_idf_version();
   platform.target = CONFIG_IDF_TARGET;

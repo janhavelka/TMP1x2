@@ -30,6 +30,8 @@ HEALTH = ("Health: state=READY online=yes consec=0 ok=20 fail=0\n"
           "Trust: bound=yes initialized=yes dirty=no last-ok=100 ms last-error=0 ms OK detail=0\n"
           "Conversion: pending=no ready=no\n> ")
 SAMPLE = "Temperature: 25.0000 C raw=0x1900 counts=400 extended=no timestamp=200 ms clock=known one-shot=unproven\n> "
+FIRMWARE = ("TMP1x2 diagnostic CLI | Arduino-ESP32 3.3.0 | esp32s3 | built Oct 11 2026 12:00:00\n"
+            "Library: 1.0.0\nFirmware: git=abcdef0123456789abcdef0123456789abcdef01 tree=clean built=2026-10-11T10:00:00Z\n> ")
 
 
 def operation(token=5, status="OK", kind="CONFIGURE"):
@@ -150,6 +152,7 @@ class ParserTests(unittest.TestCase):
         self.assertEqual("INCONCLUSIVE", result.outcome)
         self.assertEqual("prefix", result.output)
         self.assertIn(b"[I] OK detail=0", stream.getvalue())
+        self.assertTrue(session.framing_lost)
 
     def test_interrupted_command_retains_partial_output(self):
         serial = FakeSerial(b"[I] IN_PROGRESS detail=0\n")
@@ -159,10 +162,12 @@ class ParserTests(unittest.TestCase):
                 return original(size)
             raise KeyboardInterrupt()
         serial.read = interrupt
-        result = hil.SerialSession(serial, 1, 1, Clock()).command("extended 1")
+        session = hil.SerialSession(serial, 1, 1, Clock())
+        result = session.command("extended 1")
         self.assertEqual("INCONCLUSIVE", result.outcome)
         self.assertIn("IN_PROGRESS", result.output)
         self.assertEqual("operator interrupted", result.reason)
+        self.assertTrue(session.framing_lost)
 
     def test_deadline_bounds_underlying_read_and_write_timeout(self):
         serial = FakeSerial(b"[I] OK detail=0\n> ")
@@ -175,6 +180,7 @@ class ParserTests(unittest.TestCase):
         prior = serial.written
         self.assertEqual("INCONCLUSIVE", session.command("verify", timeout_s=0).outcome)
         self.assertEqual(prior, serial.written)
+        self.assertFalse(session.framing_lost)  # Nothing was sent at this expired admission.
 
     def test_unfinished_stream_is_not_reparsed_for_every_chunk(self):
         serial = FakeSerial(*([b"noise\n"] * 20), b"[I] OK detail=0\n> ")
@@ -355,7 +361,37 @@ class ParserTests(unittest.TestCase):
     def test_missing_response_and_partial_writes_are_inconclusive(self):
         for serial in (FakeSerial(), FakeSerial(b"> "), FakeSerial(write_result=2)):
             with self.subTest(serial=serial):
-                self.assertEqual("INCONCLUSIVE", hil.SerialSession(serial, 0.1, 1, Clock()).command("probe").outcome)
+                session = hil.SerialSession(serial, 0.1, 1, Clock())
+                self.assertEqual("INCONCLUSIVE", session.command("probe").outcome)
+                self.assertTrue(session.framing_lost)
+                before = serial.written
+                self.assertEqual("INCONCLUSIVE", session.command("stop").outcome)
+                self.assertEqual(before, serial.written)
+
+    def test_lost_serial_framing_defers_cleanup_without_further_writes(self):
+        for serial in (FakeSerial(), FakeSerial(write_result=3), FakeSerial(b"[I] OK detail=0\n")):
+            for mutated in (False, True):
+                with self.subTest(serial=serial, mutated=mutated):
+                    session = hil.SerialSession(serial, 0.1, 1, Clock())
+                    runner = hil.Runner(session, hil.parse_args(["--dry-run"]))
+                    runner.baseline = hil.parse_settings(SETTINGS)
+                    runner.background_started, runner.mutated = True, mutated
+                    self.assertEqual("INCONCLUSIVE", session.command("threshold 20 30").outcome)
+                    before = serial.written
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        runner.restore()
+                    self.assertEqual(before, serial.written)
+                    self.assertEqual("FAIL" if mutated else "INCONCLUSIVE", runner.results[-1].outcome)
+                    self.assertEqual("not verified" if mutated else "not required", runner.restoration)
+                    self.assertEqual(75.0, runner.baseline["low"])
+
+    def test_complete_semantic_failure_keeps_serial_framing(self):
+        serial = FakeSerial(b"[E] INVALID_PARAM detail=0\n> ", b"Watch stopped: ok=0 fail=0\n> ")
+        session = hil.SerialSession(serial, 1, 2, Clock())
+        self.assertEqual("FAIL", session.command("wreg 0 1").outcome)
+        self.assertFalse(session.framing_lost)
+        self.assertEqual("PASS", session.command("stop").outcome)
+        self.assertEqual(b"wreg 0 1\nstop\n", serial.written)
 
     def test_terminal_failures_and_cancelled_diagnostics(self):
         self.assertEqual("FAIL", hil.classify("extended 1", operation(status="CONFIG_MISMATCH"))[0])
@@ -370,10 +406,12 @@ class ParserTests(unittest.TestCase):
         self.assertEqual("FAIL", hil.classify("selftest full", good.replace("pass=19 fail=0", "pass=18 fail=1"))[0])
 
     def test_selfcheck_only_allows_optional_gpio_skip(self):
-        good = "Diagnostic summary: complete pass=8 fail=0 skip=1\n> "
+        good = "Snapshot: " + hil.SNAPSHOT_TRUST + "\nDiagnostic summary: complete pass=8 fail=0 skip=1\n> "
         self.assertEqual("PASS", hil.classify("selfcheck", good)[0])
         self.assertEqual("INCONCLUSIVE", hil.classify("selfcheck", good.replace("pass=8", "pass=7"))[0])
         self.assertEqual("INCONCLUSIVE", hil.classify("selfcheck", good.replace("pass=8", "pass=7").replace("skip=1", "skip=2"))[0])
+        for flag in ("config-match", "thresholds-match", "temperature-trusted"):
+            self.assertEqual("FAIL", hil.classify("selfcheck", good.replace(flag + "=yes", flag + "=no"))[0])
 
     def test_snapshot_requires_independent_trust_flags(self):
         good = "Snapshot: config-match=yes thresholds-match=yes temperature-trusted=yes\nDiagnostic summary: complete pass=1 fail=0 skip=0\n> "
@@ -383,14 +421,74 @@ class ParserTests(unittest.TestCase):
     def test_stress_requires_exact_count_and_all_checks(self):
         good = ("Run: stopped target=3 completed=3 ok=12 fail=0 elapsed=200 ms remaining=0\n"
                 "Mixed checks: completed=12 samples=3 (four checks per complete cycle)\n"
-                "Tracked health delta: ok=12 fail=0\nAdapter delta: attempts=15 ok=15 fail=0\n> ")
+                "Tracked health delta: ok=15 fail=0\nAdapter delta: attempts=18 ok=18 fail=0\n> ")
         self.assertEqual("PASS", hil.classify("stress_mix 3", good)[0])
         for changed in (good.replace("completed=3 ok", "completed=2 ok"),
                         good.replace("ok=12 fail=0 elapsed", "ok=11 fail=1 elapsed"),
-                        good.replace("samples=3", "samples=2"), good.replace("ok=15 fail=0", "ok=14 fail=1")):
+                        good.replace("samples=3", "samples=2"), good.replace("ok=18 fail=0", "ok=17 fail=1"),
+                        good.replace("Tracked health delta: ok=15", "Tracked health delta: ok=0"),
+                        good.replace("attempts=18", "attempts=19"),
+                        good.replace("ok=15 fail=0\nAdapter delta: attempts=18 ok=18", "ok=12 fail=0\nAdapter delta: attempts=15 ok=15")):
             self.assertNotEqual("PASS", hil.classify("stress_mix 3", changed)[0])
         self.assertEqual("INCONCLUSIVE", hil.classify("stress_mix 3", good.replace("\n> ", "\nCounter saturation reached; deltas are lower bounds.\n> "))[0])
         self.assertEqual("INCONCLUSIVE", hil.classify("stress_mix 3", good.replace("Adapter delta:", "Missing adapter:"))[0])
+
+    def test_firmware_identity_and_explicit_expectations(self):
+        firmware = hil.parse_firmware(FIRMWARE)
+        self.assertEqual("esp32s3", firmware["target"])
+        self.assertEqual("Arduino-ESP32", firmware["framework"])
+        self.assertEqual("clean", firmware["tree"])
+        for extra, changed, fails in (
+                (["--expected-firmware-commit", "abcdef0"], FIRMWARE, False),
+                (["--expected-framework", "Arduino-ESP32", "--expected-target", "esp32s3", "--require-clean-firmware"], FIRMWARE, False),
+                (["--expected-firmware-commit", "fffffff"], FIRMWARE, True),
+                (["--expected-firmware-commit", "abcdef0"], FIRMWARE.replace(firmware["commit"], "unknown"), True),
+                (["--require-clean-firmware"], FIRMWARE.replace("tree=clean", "tree=dirty"), True),
+                (["--require-clean-firmware"], FIRMWARE.replace("tree=clean", "tree=unknown"), True),
+                (["--expected-framework", "native-esp-idf"], FIRMWARE, True),
+                (["--expected-target", "esp32s2"], FIRMWARE, True)):
+            with self.subTest(extra=extra, changed=changed):
+                runner = hil.Runner(mock.Mock(), hil.parse_args(["--dry-run", "--model", "tmp102", "--address", "0x48", *extra]))
+                runner.session.transcript_error = None
+                responses = {"version": changed, "job": "Operation: active=no token=0", "stats": "No watch/stress run statistics.",
+                             "job auto": "Job auto: on", "settings": SETTINGS, "health": HEALTH, "verify": "[I] OK"}
+                runner.command = mock.Mock(side_effect=lambda command: hil.Result(command, command, "PASS", "fixture", responses[command]))
+                with contextlib.redirect_stdout(io.StringIO()):
+                    if fails:
+                        with self.assertRaises(hil.CheckError):
+                            runner.preflight()
+                    else:
+                        runner.preflight()
+                self.assertEqual("not verified" if fails else "matched requested fields", runner.firmware_verification)
+        with self.assertRaises(hil.CheckError):
+            hil.parse_firmware(FIRMWARE.replace("Firmware:", "missing:"))
+
+    def test_reboot_cannot_pass_or_be_an_expected_error(self):
+        restart = "Diagnostic CLI; application owns the bus. Type 'help' for commands.\n"
+        result = hil.SerialSession(FakeSerial((restart + "[E] INVALID_PARAM detail=0\n> ").encode()), 1, 5, Clock()).command("wreg 0 1")
+        self.assertEqual("INCONCLUSIVE", result.outcome)
+        self.assertFalse(hil.expected_error(result, {"INVALID_PARAM"}))
+        for marker in (restart, "ESP-ROM:esp32s3\n", "rst:0xc (SW_CPU_RESET)\n", "Rebooting...\n"):
+            self.assertEqual("INCONCLUSIVE", hil.classify("probe", marker + "[I] OK detail=0\n> ")[0])
+
+    def test_reboot_prevents_automatic_restore_to_unchecked_target(self):
+        session = mock.Mock()
+        session.restarted = True
+        runner = hil.Runner(session, hil.parse_args(["--dry-run"]))
+        runner.baseline, runner.mutated = hil.parse_settings(SETTINGS), True
+        runner.command = mock.Mock()
+        with contextlib.redirect_stdout(io.StringIO()):
+            runner.restore()
+        runner.command.assert_not_called()
+        self.assertEqual("not verified", runner.restoration)
+        self.assertEqual("FAIL", runner.results[-1].outcome)
+        runner.mutated, runner.background_started = False, True
+        runner.restoration = "not required"
+        with contextlib.redirect_stdout(io.StringIO()):
+            runner.restore()
+        runner.command.assert_not_called()
+        self.assertEqual("not required", runner.restoration)
+        self.assertEqual("INCONCLUSIVE", runner.results[-1].outcome)
 
     def test_historical_health_errors_do_not_fail_fresh_checks(self):
         output = HEALTH.replace("fail=0", "fail=4").replace("ms OK detail", "ms I2C_TIMEOUT detail")
@@ -437,6 +535,9 @@ class ParserTests(unittest.TestCase):
                     with self.subTest(polarity=polarity, faults=faults, active=active):
                         self.assertEqual("PASS", hil.check_comparator(output, polarity, faults, active)[0])
                         self.assertEqual("FAIL", hil.check_comparator(output, polarity, faults, not active)[0])
+                        for clear in (0x10, 0x40, 0x80):
+                            wrong = output.replace(f"CONFIG=0x{word:04X}", f"CONFIG=0x{word & ~clear:04X}")
+                            self.assertEqual("FAIL", hil.check_comparator(wrong, polarity, faults, active)[0])
 
     def test_stop_waits_for_first_cancellation_restoration(self):
         output = "Configuration test cancelled; scheduling restoration of the captured profile.\n> "
@@ -464,7 +565,9 @@ class ParserTests(unittest.TestCase):
     def test_argument_validation(self):
         for arguments in ([], ["--dry-run", "--stress-count", "0"], ["--dry-run", "--command-timeout", "nan"],
                           ["--dry-run", "--min-c", "nan"], ["--dry-run", "--min-c", "20", "--max-c", "10"],
-                          ["--dry-run", "--model", "tmp112d", "--address", "0x48"]):
+                          ["--dry-run", "--model", "tmp112d", "--address", "0x48"],
+                          ["--dry-run", "--expected-firmware-commit", "unknown"],
+                          ["--dry-run", "--expected-target", "unknown"]):
             with self.subTest(arguments=arguments), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 hil.parse_args(arguments)
 
@@ -519,6 +622,7 @@ class ParserTests(unittest.TestCase):
         serial = ProcessSerial(CLI_FIXTURE)
         args = hil.parse_args(["--port", "native-model", "--model", "tmp102", "--address", "0x48",
                                "--suite", "smoke", "--suite", "config", "--suite", "oneshot", "--suite", "stress",
+                               "--suite", "negative", "--suite", "owner", "--suite", "registers",
                                "--stress-count", "3", "--silence-seconds", "0.01"])
         session = hil.SerialSession(serial, 3, 8)
         runner = hil.Runner(session, args)
@@ -530,6 +634,7 @@ class ParserTests(unittest.TestCase):
             self.assertEqual([], failures, "\n\n".join(session.transcript))
             self.assertEqual("verified", runner.restoration)
             self.assertGreater(len(runner.results), 60)
+            self.assertEqual("not requested", runner.firmware_verification)
         finally:
             serial.close()
 
@@ -547,6 +652,50 @@ class ParserTests(unittest.TestCase):
             self.assertFalse([result for result in runner.results if result.outcome in {"FAIL", "INCONCLUSIVE"}],
                              "\n\n".join(session.transcript))
             self.assertEqual("verified", runner.restoration)
+        finally:
+            serial.close()
+
+    @unittest.skipUnless(CLI_FIXTURE, "pass --cli-fixture PATH to validate actual shared CLI output")
+    def test_new_suites_restore_extended_only_entry_profile(self):
+        serial = ProcessSerial(CLI_FIXTURE)
+        session = hil.SerialSession(serial, 3, 8)
+        args = hil.parse_args(["--port", "native-model", "--model", "tmp102", "--address", "0x48",
+                               "--suite", "registers", "--suite", "owner", "--suite", "negative", "--suite", "oneshot"])
+        runner = hil.Runner(session, args)
+        try:
+            session.capture_boot(0.2)
+            for command in ("extended 1", "threshold 150 200"):
+                self.assertEqual("PASS", session.command(command).outcome)
+            with contextlib.redirect_stdout(io.StringIO()):
+                runner.run()
+            failures = [result for result in runner.results if result.outcome in {"FAIL", "INCONCLUSIVE"}]
+            self.assertEqual([], failures, "\n\n".join(session.transcript))
+            self.assertEqual("verified", runner.restoration)
+            self.assertEqual(150.0, runner.baseline["low"])
+            self.assertEqual(runner.baseline, hil.parse_settings(session.command("settings").output))
+        finally:
+            serial.close()
+
+    @unittest.skipUnless(CLI_FIXTURE, "pass --cli-fixture PATH to validate actual shared CLI output")
+    def test_failed_owner_suite_restores_automatic_polling_and_baseline(self):
+        serial = ProcessSerial(CLI_FIXTURE)
+        session = hil.SerialSession(serial, 3, 8)
+        args = hil.parse_args(["--port", "native-model", "--model", "tmp102", "--address", "0x48", "--suite", "owner"])
+        runner = hil.Runner(session, args)
+        def interrupted_owner():
+            runner.mutated = True
+            runner.command("job auto 0")
+            runner.command("job start shutdown 2147483647")
+            raise hil.CheckError("injected suite interruption with manual job active")
+        runner.owner = interrupted_owner
+        try:
+            session.capture_boot(0.2)
+            with contextlib.redirect_stdout(io.StringIO()):
+                runner.run()
+            self.assertEqual("verified", runner.restoration, "\n\n".join(session.transcript))
+            self.assertIn("Job auto: on", session.command("job auto").output)
+            self.assertEqual(runner.baseline, hil.parse_settings(session.command("settings").output))
+            self.assertTrue(any(result.outcome == "INCONCLUSIVE" for result in runner.results))
         finally:
             serial.close()
 

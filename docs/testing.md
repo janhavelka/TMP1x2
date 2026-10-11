@@ -1,7 +1,7 @@
 # Testing guide
 
 Run commands from the repository root unless a command names another project.
-Use a source checkout: release archives omit tests, runners and build scripts.
+Use a source checkout: release archives omit tests, runners and repository tools.
 Record the commit with `git rev-parse HEAD` and local changes with
 `git status --short` when saving results.
 
@@ -40,11 +40,15 @@ when changing compilers or generators.
 
 CTest runs core register tests, shared CLI tests, owner operations, model/address
 variants, field helpers, shared-bus operations, framework-free headers, version
-synchronization, IDF component naming, documentation checker regressions, and
+synchronization, IDF component naming/build identity, documentation checker regressions, and
 the Python HIL runner tests. The HIL
 tests launch the compiled CLI model automatically; its location is supplied by
 CMake, including for multi-configuration generators. Test timeouts turn a stuck
 test into a failure. Logs are in `build-tests/Testing/Temporary/LastTest.log`.
+The CLI checks include manual transfer budgets, bus-silent cancellation and
+invalidation, exact counter assertions, malformed commands, and failures caused
+by untrusted live diagnostics. Runner tests exercise these workflows through
+the compiled CLI as well as fragmented and invalid serial responses.
 
 On Linux with GCC or Clang, use a separate sanitizer build:
 
@@ -91,8 +95,9 @@ idf.py -C examples/esp_idf/basic set-target esp32s2 build
 ```
 
 `set-target` reconfigures the example for the selected chip. Preserve any local
-SDK configuration you need before switching. The standalone IDF component naming
-test checks CMake registration only; it does not replace these builds.
+SDK configuration you need before switching. The standalone IDF contract tests
+check CMake registration and example build identity; they do not replace these
+SDK builds.
 
 ## Version and release package
 

@@ -1,5 +1,35 @@
 # Validation results
 
+## 2026-10-11 CLI and sibling-test audit
+
+The [comparison](library-comparison.md) records sixteen inspected sibling
+revisions, command implementations and test procedures. Changes add console
+access to manual owner polling, explicit deadlines, invalidation and exact
+transfer assertions. They also fix diagnostic trust failures, strengthen serial
+evidence and expand the [physical procedures](hardware-validation.md).
+
+| Check | Result |
+| --- | --- |
+| Strict C++17 CMake build | Passed with `-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Werror` |
+| Complete CTest suite | All 11 entries passed |
+| HIL runner host regressions | All 52 tests passed, including six compiled shared-CLI fixture workflows; zero/one/two-transfer budgets, cancellation before/after writes, deadlines, malformed inputs, extended-only baseline restoration, firmware checks, restart and lost-framing handling |
+| IDF example build-identity regressions | All five tests passed; native CMake and PlatformIO refresh paths, dirty/clean/new-commit changes, renamed archives, unrelated ancestor repositories and linked worktrees |
+| Arduino ESP32-S3 / ESP32-S2 | Both full firmware links and binary generation passed with Arduino 3.3.11 / pioarduino 55.03.311 |
+| Native ESP-IDF ESP32-S3 / ESP32-S2 | Both full firmware links and binary generation passed with ESP-IDF 5.5.5 through managed PlatformIO |
+| Release metadata and framework boundaries | Passed; generated public version files unchanged |
+| Release archive | 47 files; required example identity support included; isolated renamed CMake consumer compiled, linked and ran |
+| Doxygen | 109 HTML pages; public API, guide links and assets passed |
+| Physical hardware | NOT_RUN |
+
+Local checks used Windows, GCC 15.1.0 and Python 3.12.10. Commands follow the
+[testing guide](testing.md), with CMake/CTest output under `build-cli-depth/`.
+Firmware logs are `arduino.log`, `idf-identity-fix.log` and
+`idf-identity-incremental.log` in that directory; package output is `package.log`.
+The serial runner's nine-suite dry run opened no port and produced no hardware
+result. No board was flashed, sibling source was changed or FieldCore-node
+runtime was tested. Instrumented timing, calibrated accuracy, ALERT/ARA/reset
+behavior and concurrent bus-owner execution remain explicit physical gates.
+
 ## 2026-10-11 maintainability audit
 
 The [audit](audit-2026-10-11.md) records the removed duplication, retained
