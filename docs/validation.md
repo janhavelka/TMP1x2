@@ -2,7 +2,7 @@
 
 ## 2026-10-11 Python HIL runner follow-up
 
-The [runner comparison](library-comparison.md#python-hil-runner-follow-up)
+The [runner comparison](library-comparison.md)
 records the sibling implementations used for command framing, evidence checks,
 checkpointing and long-run measurements. This follow-up adds bus-silent nonce
 markers, rejects ambiguous or late records, persists the captured profile before
