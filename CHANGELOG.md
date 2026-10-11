@@ -22,6 +22,12 @@
 
 ### Fixed
 
+- Correlate HIL command completion with fresh bus-silent CLI markers; reject
+  stale, duplicate, wrong-kind and late evidence without retrying lost framing.
+- Check all diagnostic detail rows, batch temperature extrema and advancing
+  soak acquisitions; incomplete requested suites cannot produce overall PASS.
+- Checkpoint the captured HIL profile before testing changes settings and retain
+  start/end host source identity separately from flashed firmware identity.
 - Bound example console output service during host stalls, retain partial writes,
   expose output loss and backend identity, and avoid blocking USB TX waits.
 - Support ROM CDC startup on IDF 5.3 and its separate console component in IDF 6.

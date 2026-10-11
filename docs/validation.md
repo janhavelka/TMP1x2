@@ -1,5 +1,34 @@
 # Validation results
 
+## 2026-10-11 Python HIL runner follow-up
+
+The [runner comparison](library-comparison.md#python-hil-runner-follow-up)
+records the sibling implementations used for command framing, evidence checks,
+checkpointing and long-run measurements. This follow-up adds bus-silent nonce
+markers, rejects ambiguous or late records, persists the captured profile before
+mutations and checks complete diagnostic and soak evidence.
+
+| Check | Result |
+| --- | --- |
+| Strict C++17 CMake build | Passed with the existing warning-as-error configuration |
+| Complete CTest suite | All 12 entries passed |
+| HIL runner regressions | All 89 tests passed, including eight compiled CLI fixture workflows; two campaigns reuse one live CLI process with separate evidence and verified restoration |
+| Arduino ESP32-S3 / ESP32-S2 | Both full firmware links and binary generation passed with Arduino 3.3.11 / pioarduino 55.03.311 |
+| Native ESP-IDF ESP32-S3 / ESP32-S2 | Both full firmware links and binary generation passed with ESP-IDF 5.5.5 |
+| Release metadata and framework boundaries | Passed; public version files unchanged |
+| Release archive | 50 files; isolated renamed CMake consumer compiled, linked and ran |
+| Doxygen | 109 HTML pages; public API, guide links and assets passed |
+| Physical sensor, USB faults and sustained hardware soak | NOT_RUN |
+
+Local checks used Windows, GCC 15.1.0 and Python 3.12.10. Logs are under
+`build-usb-soak/`: `hil-ctest.log`, `hil-arduino.log`, `hil-idf.log`,
+`hil-package-check.log` and `hil-doxygen.log`. The ten-suite, eight-hour-soak dry
+run opened no port. Controlled tests cover FIFO marker ordering, partial-line
+rejection, stale/duplicate/wrong-kind evidence, deadline overruns, checkpoint
+failure, hidden batch temperature excursions and stalled acquisition evidence.
+The existing 12,000-batch fake-clock test checks bounded result retention;
+it does not establish reliability on powered hardware.
+
 ## 2026-10-11 detection, soak and USB follow-up
 
 The [renewed comparison](library-comparison.md) checks all sixteen sibling

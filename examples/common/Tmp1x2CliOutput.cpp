@@ -47,6 +47,7 @@ void Cli::printHelp(const char* topic) {
   section("common", "Common");
   item("help / ? [topic]", "All commands or one topic; cached, no I2C");
   item("version / ver", "Firmware, library and framework version");
+  item("hilmark <token>", "Echo 1..32 letters/digits/_/- for HIL framing; no I2C");
   item("color [0|1|off|on]", "Show or toggle ANSI colors");
   item("verbose [0|1] / quiet [0|1]", "Show or set per-sample watch/stress output");
   section("connection", "Connection and discovery");

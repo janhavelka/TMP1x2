@@ -217,6 +217,17 @@ int main(int argc, char** argv) {
   for (char ch : std::string("reg\t0\r\n")) cli.feed(ch);
   CHECK(f.output.find("0x00 = 0x1900") != std::string::npos);
   const unsigned beforeMalformed = f.transfers;
+  f.output.clear();
+  for (char ch : std::string("rawwrite 1 0x6100\x03\nhilmark aB_09-\n")) cli.feed(ch);
+  CHECK(f.transfers == beforeMalformed);
+  CHECK(f.output.find("Invalid control character") != std::string::npos);
+  CHECK(f.output.find("CLI marker: token=aB_09-\n") != std::string::npos);
+  for (const char* line : {"hilmark", "hilmark x y", "hilmark bad!", "hilmark 123456789012345678901234567890123"}) {
+    f.output.clear(); cli.processCommand(line);
+    CHECK(f.output.find("INVALID_PARAM") != std::string::npos);
+    CHECK(f.output.find("CLI marker:") == std::string::npos);
+    CHECK(f.transfers == beforeMalformed);
+  }
   for (char control : {'\0', '\x01', '\x18', '\x1B'}) {
     std::string malformed = "w";
     malformed.push_back(control); malformed += "reg 1 0x6100\n";

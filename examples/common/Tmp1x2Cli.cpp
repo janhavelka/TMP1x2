@@ -121,6 +121,14 @@ void Cli::processCommand(const char* text) {
   if (!count) return;
   const char* command = args[0];
   const auto invalid = [this]() { status(TMP1x2::Status::Error(TMP1x2::Err::INVALID_PARAM, "invalid command/arguments; see help")); };
+  if (equals(command, "hilmark")) {
+    if (count != 2 || std::strlen(args[1]) > 32) { invalid(); return; }
+    for (const char* p = args[1]; *p; ++p) {
+      if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+            (*p >= '0' && *p <= '9') || *p == '_' || *p == '-')) { invalid(); return; }
+    }
+    print("CLI marker: token=%s\n", args[1]); return;
+  }
   if (equals(command, "help") || equals(command, "?")) {
     if (count > 2) { invalid(); return; }
     printHelp(count == 2 ? args[1] : nullptr); return;

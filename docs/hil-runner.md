@@ -1,8 +1,8 @@
 # Serial hardware validation runner
 
 `tools/hil_tmp1x2_runner.py` exercises the **same shared CLI** in the Arduino and
-native ESP-IDF examples. It was inspired by the sibling OPT4001 and ADS1115 serial
-runners, with completion tracking for this library's cooperative operations.
+native ESP-IDF examples. The [sibling comparison](library-comparison.md) records
+the runners used to improve framing, measurement checks and durable evidence.
 It requires a source checkout: tooling is intentionally omitted from the library
 distribution archive. Python parser tests and the native CLI model do not count
 as hardware validation. No physical TMP1x2 run is claimed by this change.
@@ -90,7 +90,9 @@ Arduino build metadata abbreviates revisions. A commit match alone does not
 prove the source tree was clean; use `--require-clean-firmware` when that matters.
 Without an expectation, unknown firmware fields remain unknown and verification
 is recorded as `not requested`. The host checkout's commit never substitutes for
-the flashed image's identity. Rebuild older firmware that lacks the identity line.
+the flashed image's identity. Host provenance records the start and end commit,
+dirty state and runner SHA-256 separately, including whether they changed during
+the run. Rebuild older firmware that lacks identity or the `hilmark` command.
 
 Run the same command after flashing the native IDF example and record each
 framework/build separately. A host GPIO test is useful only when the example has
@@ -147,7 +149,11 @@ range of 1..1000. Every cycle probes the target and checks CONFIG, thresholds an
 temperature. The runner verifies the completed cycle/sample counts, exact
 raw-versus-tracked transfer accounting and absence of transport failures. After
 each batch it checks the cached sample, trusted READY health and console loss
-counters. A batch counts as completed only after all these checks pass. Continuous
+counters. The reported batch minimum, mean and maximum must be finite, ordered
+and inside the operator temperature window. Cumulative health must agree with
+the batch transfer delta, and acquisition timestamps must advance between batches
+with uint32 wrap handled. Equal temperature values are allowed. A batch counts
+as completed only after all these checks pass. Continuous
 sampling may read the same conversion more than once; shutdown sampling must
 report confirmed one-shot provenance.
 
@@ -171,13 +177,24 @@ observed a failure. A complete duration with zero verified batches cannot pass.
 
 ## Completion, cleanup and evidence
 
-The runner waits for a terminal operation with its matching token, the complete
-diagnostic summary or the exact finite-run count. A prompt printed when work
+The runner first sends an invalid control character and newline to reject any
+retained partial input without executing it. Each command then needs its terminal
+response followed by a fresh `hilmark` nonce and prompt. The marker is bus-silent
+and available during ongoing jobs. Pending non-prompt data, wrong or repeated
+markers, or data after a marker invalidate framing. This requires exclusive CLI
+ownership; it is not a reconnect or automatic retry protocol.
+
+Operations must return the expected kind and a matching, advancing nonzero token.
+Diagnostics need every named check exactly once and matching totals; only the
+physical ALERT GPIO check may be skipped in selfcheck. Duplicate or malformed
+state, sample and summary records cannot pass. A prompt printed when work
 starts is not success. Every serial read/write is bounded; defaults are 5 seconds
 per ordinary command and 120 seconds for a full diagnostic or finite run. Increase
 `--long-timeout` for long stress runs (each mixed cycle has a nominal 100 ms gap,
 plus transfer/conversion time). Missing, truncated, malformed or unsupported
-responses are INCONCLUSIVE. No retry silently changes a failed check to success.
+responses are INCONCLUSIVE. The deadline includes the marker round trip and is
+checked before every write and after every read. Late bytes remain in evidence.
+No retry silently changes a failed check to success.
 Selfcheck requires all snapshot trust flags, independently of its PASS count.
 Finite stress must account for actual transfers: mixed cycles include one
 health-bypassing probe each, while sample-only runs use tracked transfers only.
@@ -220,7 +237,8 @@ reconnect and inspect the captured settings before restoring them through the
 CLI. Do not assume that a failed or cancelled write left hardware unchanged.
 Health totals, cached samples, conversion history and interrupt latch history
 are not restored: this is desired configuration restoration, not time reversal.
-If a firmware startup/reset banner appears during a command, the session is
+If a firmware startup/reset banner, panic, assertion, backtrace, brownout or
+watchdog message appears during a command, the session is
 INCONCLUSIVE and no automatic restoration writes are sent to the unchecked
 target. If configuration had been changed, restoration is reported as unverified
 and requires an operator to check the target and captured profile. This detects
@@ -250,10 +268,12 @@ profile, parsed firmware identity and requested-identity comparison, bus setting
 console loss baseline, ordinary command responses/durations/outcomes, aggregate
 soak results, configuration and verbose restoration status, and manual
 gates left `NOT_RUN`. The raw transcript is written during the run and retains
-ANSI bytes and startup output. An initial INCONCLUSIVE report remains if the
-process stops before finalization; its `hardware_run` is `null` because an
-interrupted connection state is unknown. A completed setup-failure report uses
-`false`. The final JSON replaces the initial report atomically.
+ANSI bytes, nonce exchanges and startup output. Before suites begin, a flushed,
+atomically replaced INCONCLUSIVE checkpoint retains the verified baseline,
+firmware identity and restoration information. Captured verbose state is saved
+before quiet mode is selected. A checkpoint failure stops further test work.
+The initial report has `hardware_run: null` until connection evidence is recorded;
+a completed setup-failure report uses `false`. Final JSON replacement is atomic.
 
 The JSON retains up to 16,777,216 characters of command output. Older output
 beyond that limit is removed from JSON with a note pointing to the full transcript;
@@ -274,6 +294,10 @@ the report.
 | `INCONCLUSIVE` | Incomplete evidence, setup/transport framing failure or missing operator stimulus |
 | `NOT_RUN` | Selected suite not reached after an earlier failure, or a separate manual gate |
 
+Overall PASS requires every requested suite and soak to finish, with required
+configuration and presentation restoration verified. Individual passing rows
+cannot hide an unrun selected suite.
+
 Exit codes: **0** selected checks passed, **1** a check failed, **2** inconclusive
 or setup failure. Optional GPIO SKIP does not fail register-only suites. PASS is
 limited to the selected automated checks; it does not certify thermal accuracy,
@@ -293,9 +317,11 @@ python tools/test_hil_tmp1x2_runner.py --cli-fixture build/tmp1x2_cli_tests.exe
 
 The native fixture reuses the existing CLI register model. It validates actual
 shared CLI output, detection and negative/register/owner suites, reordered suites, cancellation after a write, retained
-shutdown one-shots, quiet stress, a short soak and restoration. Fake-clock tests
+shutdown one-shots, quiet stress, a short soak and restoration. Two complete
+campaigns reuse one running CLI process with separate evidence files. Fake-clock tests
 cover thousands of complete batches with bounded retained results, first-failure
-termination, console loss and interrupted durations. These do not emulate board electrical behavior
+termination, stale/duplicate/late responses, checkpoint failures, hidden thermal
+excursions, console loss and interrupted durations. These do not emulate board electrical behavior
 or physical ALERT timing and never create hardware PASS evidence.
 See the [testing guide](testing.md) for generator-specific executable paths and
 the full host, framework and CI procedures.

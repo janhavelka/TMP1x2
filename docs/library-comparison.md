@@ -40,6 +40,33 @@ Console counters describe software buffering and transport acceptance; physical
 host delivery and USB disconnect behavior still require the instrumented bench
 checks in [hardware validation](hardware-validation.md).
 
+## Python HIL runner follow-up
+
+The runner audit starts from TMP1x2 `aff6c67` on 2026-10-11. The initial local
+snapshot found 24Cxx at `b6ddbc9` and TCA9548A at `d715970`, both with uncommitted
+changes. Both were inspected read-only. The other fourteen repositories were
+clean at the revisions in the earlier inventory below. During the follow-up,
+24Cxx advanced to clean `a318ee5`; this later observation does not replace the
+initial snapshot. These are local checkout observations, not remote or flashed
+firmware identities.
+
+| Pattern | Applicable peer evidence | TMP1x2 follow-up |
+| --- | --- | --- |
+| Correlated serial responses | 24Cxx `tools/hil_runner.py`; INA228 `tools/run_i2c_hil.py`; INA3221 `tools/hil_cli_runner.py` | Unique nonce markers establish command boundaries; stale success text and unrelated prompts cannot certify the current command |
+| Exactly one evidence record | MB85RC `tools/hil_runner.py`; RV3032-C7 `tools/hil_cli_runner.py`; SSD1315 `tools/run_ssd1315_hil.py` | Reject duplicate or contradictory terminal, sample and state records instead of accepting the first match |
+| Deadline enforcement | SCD41 `tools/scd41_hil_runner.py`; BME280 `tools/run_i2c_hil.py` | Recheck the remaining budget before writing and after reading; retain late output without treating it as an on-time success |
+| Measurement evidence across batches | SHT3x-main `tools/run_sht3x_hil.py`; SCD41 `tools/scd41_hil_runner.py` | Validate the batch minimum, mean and maximum against the temperature window and require acquisition timestamps to advance |
+| Recoverable run evidence | 24Cxx `tools/hil_runner.py`; BME280 `tools/run_i2c_hil.py` | Atomically checkpoint the verified baseline before mutations; record host provenance at both start and end |
+| Incomplete selected suites | LDC1614 `tools/ldc1614_hil_runner.py` | An unfinished or unrun selected suite prevents an overall PASS |
+| Tests against the command processor | Peer parser tests and TMP1x2 `tools/test_hil_tmp1x2_runner.py` | Keep one native shared-CLI process alive through ordered suites and cleanup; use controlled serial chunks for stale, fragmented and delayed responses |
+
+These additions extend the existing bounded transcript retention, quiet soak,
+firmware identity checks and verified restoration. Reset or lost framing still
+prevents automatic cleanup against an unchecked target. Parser tests and native
+CLI fixtures establish software behavior only; physical sensor accuracy,
+electrical faults, reset stimulus and USB disconnect behavior still need the
+bench evidence described in [hardware validation](hardware-validation.md).
+
 ## Inventory
 
 | Library | Device / protocol | Relevance to TMP102/TMP112 |

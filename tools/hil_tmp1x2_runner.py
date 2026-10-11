@@ -11,11 +11,13 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict, dataclass
 import datetime as dt
+import hashlib
 import json
 import math
 import os
 from pathlib import Path
 import re
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -36,7 +38,7 @@ SAMPLE = re.compile(r"Temperature: ([+-]?\d+\.\d+) C raw=0x([0-9A-Fa-f]{4}) coun
 TRANSPORT_ERRORS = {"I2C_ERROR", "I2C_NACK_ADDR", "I2C_NACK_DATA", "I2C_TIMEOUT", "I2C_BUS", "DEVICE_NOT_FOUND", "TIMEOUT"}
 MUTATING = {"config", "oneshot", "alert", "disconnect", "registers", "owner", "negative"}
 SNAPSHOT_TRUST = "config-match=yes thresholds-match=yes temperature-trusted=yes"
-RESTART = re.compile(r"Diagnostic CLI; application owns the bus|ESP-ROM:|(?:^|\n)rst:0x|Rebooting\.\.\.")
+RESTART = re.compile(r"Diagnostic CLI; application owns the bus|ESP-ROM:|(?:^|\n)rst:0x|Rebooting\.\.\.|Guru Meditation|assert failed|Backtrace:|brownout|watchdog", re.IGNORECASE)
 SYNC_PATTERNS = {
     "version": r"TMP1x2 diagnostic CLI.*\nLibrary: \S+",
     "job": r"Operation: active=(?:yes|no) token=\d+|Diagnostic: [^\n]+ active=(?:yes|no)",
@@ -76,7 +78,11 @@ def sync_pattern(command: str) -> str:
     if command.startswith("job step "):
         return r"Poll: budget=\d+ transfers=\d+ done=(?:yes|no) next=\d+ ms"
     if command.startswith("rawread "):
-        return r"Raw 0x0[0-3] = 0x[0-9A-Fa-f]{4}"
+        try:
+            register = int(command.split()[1], 0)
+        except (ValueError, IndexError):
+            return r"(?!)"
+        return rf"Raw 0x{register:02X} = 0x[0-9A-Fa-f]{{4}}(?: \(bypasses driver health\))?"
     if command.startswith("rawwrite "):
         return r"\[I\] OK\b"
     if command.startswith("convert "):
@@ -88,6 +94,20 @@ def sync_pattern(command: str) -> str:
 
 def clean(text: str) -> str:
     return ANSI.sub("", text).replace("\r", "")
+
+
+def one_record(output: str, prefix: str, pattern):
+    """Require one whole record, counting malformed duplicates as evidence too."""
+    lines = [line.lstrip("> ") for line in clean(output).splitlines()]
+    records = [line for line in lines if line.startswith(prefix)]
+    match = re.fullmatch(pattern, records[0]) if len(records) == 1 else None
+    if match is None:
+        raise CheckError(f"missing, malformed or duplicate {prefix} record")
+    return match
+
+
+def advances_u32(current: int, previous: int) -> bool:
+    return 0 <= current <= 0xFFFFFFFF and 0 < ((current - previous) & 0xFFFFFFFF) < 0x80000000
 
 
 @dataclass
@@ -135,6 +155,8 @@ class EvidenceFiles:
                 temporary = Path(output.name)
                 json.dump(report, output, indent=2, allow_nan=False)
                 output.write("\n")
+                output.flush()
+                os.fsync(output.fileno())
             os.replace(temporary, self.path)
         finally:
             if temporary is not None:
@@ -168,6 +190,15 @@ def operation_status(output: str):
                      r"\b[^\n]*\n\[([IE])\] (\w+)\b", output)
 
 
+def operation_admission(command: str, output: str):
+    started = one_record(output, "Operation started:", r"Operation started: token=(\d+) kind=(\w+); job and cancel remain available\.")
+    kind = {"measure": "READ", "recover": "RECOVER", "shutdown": "SHUTDOWN",
+            "init": "INITIALIZE", "read": "READ"}.get(command.split()[0], "CONFIGURE")
+    if started[2] != kind or not 0 < int(started[1]) <= 0xFFFFFFFF:
+        raise CheckError("operation admission has the wrong kind or an invalid token")
+    return started
+
+
 def response_complete(command: str, output: str) -> bool:
     """A start prompt is not completion of a cooperative operation or diagnostic."""
     output = clean(output)
@@ -197,6 +228,13 @@ def response_complete(command: str, output: str) -> bool:
 
 
 def classify(command: str, output: str, completed: bool = True) -> tuple[str, str]:
+    try:
+        return _classify(command, output, completed)
+    except CheckError as exc:
+        return "INCONCLUSIVE", str(exc)
+
+
+def _classify(command: str, output: str, completed: bool) -> tuple[str, str]:
     output = clean(output)
     if RESTART.search(output):
         return "INCONCLUSIVE", "firmware restarted during the command; session state is lost"
@@ -209,11 +247,18 @@ def classify(command: str, output: str, completed: bool = True) -> tuple[str, st
     if "[FAIL]" in output:
         return "FAIL", "firmware diagnostic reported a failed check"
     if is_operation(command):
+        started = operation_admission(command, output)
+        terminal_record = one_record(output, "Operation result:", r"Operation result: token=(\d+) kind=(\w+)\b.*")
+        if terminal_record.groups() != started.groups():
+            raise CheckError("operation result does not match its admission")
+        if output.index("Operation result:") < output.index("Operation started:"):
+            raise CheckError("operation result precedes admission")
+        one_record(output, "[I] OK", r"\[I\] OK detail=0(?:: OK)?")
         terminal = operation_status(output)
         if not response_complete(command, output) or terminal is None or terminal.groups() != ("I", "OK"):
             return "INCONCLUSIVE", "missing matching successful terminal operation result"
     elif command in {"selfcheck", "selftest full", "settings read", "snapshot read"}:
-        summary = DIAGNOSTIC.search(output)
+        summary = one_record(output, "Diagnostic summary:", DIAGNOSTIC)
         if not summary or summary[1] != "complete":
             return "INCONCLUSIVE", "diagnostic did not complete"
         passed, failed, skipped = map(int, summary.groups()[1:])
@@ -222,10 +267,15 @@ def classify(command: str, output: str, completed: bool = True) -> tuple[str, st
         expected = {"selfcheck": 9, "selftest full": 19, "settings read": 3, "snapshot read": 1}[command]
         if passed + skipped != expected or skipped > (1 if command == "selfcheck" else 0):
             return "INCONCLUSIVE", "missing checks or unexpected skipped checks"
+        validate_diagnostic(command, output, passed, skipped)
         if command == "selftest full" and "Baseline restoration: verified\n" not in output:
             return "FAIL", "captured baseline restoration was not verified"
+        if command == "selftest full":
+            one_record(output, "Baseline restoration:", r"Baseline restoration: verified")
         if command in {"selfcheck", "snapshot read"} and SNAPSHOT_TRUST not in output:
             return "FAIL", "snapshot configuration, thresholds or temperature are untrusted"
+        if command in {"selfcheck", "snapshot read"}:
+            one_record(output, "Snapshot:", r"Snapshot: CONFIG=0x[0-9A-Fa-f]{4} TEMP=0x[0-9A-Fa-f]{4} TLOW=0x[0-9A-Fa-f]{4} THIGH=0x[0-9A-Fa-f]{4} " + SNAPSHOT_TRUST)
     elif command in {"discover", "detect"}:
         summary = DISCOVERY.search(output)
         if summary and int(summary[8]):
@@ -237,7 +287,7 @@ def classify(command: str, output: str, completed: bool = True) -> tuple[str, st
         except CheckError as exc:
             return "INCONCLUSIVE", str(exc)
     elif command.startswith(("stress ", "stress_mix ")):
-        run = RUN.search(output)
+        run = one_record(output, "Run:", RUN)
         if not run:
             return "INCONCLUSIVE", "missing finite-run summary"
         target, completed_count, ok, failed, _, remaining = map(int, run.groups()[1:])
@@ -252,8 +302,8 @@ def classify(command: str, output: str, completed: bool = True) -> tuple[str, st
             return "FAIL", "mixed run is missing expected samples"
         if "Counter saturation reached" in output:
             return "INCONCLUSIVE", "saturated transport counters cannot establish exact run accounting"
-        tracked = re.search(r"Tracked health delta: ok=(\d+) fail=(\d+)", output)
-        adapter = re.search(r"Adapter delta: attempts=(\d+) ok=(\d+) fail=(\d+)", output)
+        tracked = one_record(output, "Tracked health delta:", r"Tracked health delta: ok=(\d+) fail=(\d+)")
+        adapter = one_record(output, "Adapter delta:", r"Adapter delta: attempts=(\d+) ok=(\d+) fail=(\d+)")
         if not tracked or not adapter:
             return "INCONCLUSIVE", "missing tracked health or adapter transfer deltas"
         if re.search(r"(?:Tracked health|Adapter) delta:[^\n]*fail=[1-9]", output):
@@ -265,9 +315,42 @@ def classify(command: str, output: str, completed: bool = True) -> tuple[str, st
         if (tracked_ok < minimum or attempts != adapter_ok + adapter_fail or
                 adapter_ok != tracked_ok + bypassed or tracked_fail != adapter_fail):
             return "FAIL", "physical transfer accounting does not match completed work and untracked probes"
+        if any(value >= 0xFFFFFFFF for value in (tracked_ok, tracked_fail, attempts, adapter_ok, adapter_fail)):
+            return "INCONCLUSIVE", "saturated run counters cannot establish exact accounting"
+        if command.startswith("stress_mix"):
+            mixed = one_record(output, "Mixed checks:", r"Mixed checks: completed=(\d+) samples=(\d+) \(four checks per complete cycle; shutdown sampling may trigger OS\)")
+            if tuple(map(int, mixed.groups())) != (expected * 4, expected):
+                return "FAIL", "mixed run counts disagree"
+        outcome, reason = check_run_temperature(output, -256.0, 255.9375)
+        if outcome != "PASS":
+            return outcome, reason
     else:
         if not re.search(sync_pattern(command), output):
             return "INCONCLUSIVE", "missing command-specific response"
+        parsers = {"settings": parse_settings, "health": parse_health, "version": parse_firmware,
+                   "console": parse_console, "xfer_stats": parse_counters}
+        if command in parsers:
+            parsers[command](output)
+        if command in {"probe", "verify", "start", "invalidate"} or command.startswith("rawwrite "):
+            one_record(output, "[I] OK", r"\[I\] OK detail=0(?:: OK)?")
+        if command in {"verbose", "verbose 0", "verbose 1"}:
+            one_record(output, "Verbose:", r"Verbose: (?:on|off)(?: \(watch/stress samples and immediate errors\))?")
+        if command in {"job auto", "job auto 0", "job auto 1"}:
+            one_record(output, "Job auto:", r"Job auto: (?:on|off)")
+        if command in {"sample", "read", "tryread", "readblocking 500"}:
+            one_record(output, "Temperature:", SAMPLE)
+        if command in {"dump", "rawdump"}:
+            rows = [line.lstrip("> ") for line in output.splitlines() if line.lstrip("> ").startswith("0x")]
+            if len(rows) != 4:
+                raise CheckError("register dump needs exactly four records")
+            for register in range(4):
+                one_record(output, f"0x{register:02X}", rf"0x{register:02X} = 0x[0-9A-Fa-f]{{4}}")
+        if command.startswith("rawread "):
+            one_record(output, "Raw ", sync_pattern(command))
+        if command == "config":
+            one_record(output, "CONFIG=", SYNC_PATTERNS["config"] + r" mode=\w+ rate=(?:0\.25|1|4|8) Hz")
+        if command.startswith("job start "):
+            operation_admission(command.split()[2], output)
         if command == "stop":
             summary = DIAGNOSTIC.search(output)
             if summary and int(summary[3]):
@@ -281,17 +364,48 @@ def expected_error(result: Result, allowed: set[str]) -> bool:
     """An expected physical error must not hide another error or broken framing."""
     output = clean(result.output)
     errors = ERROR.findall(output)
-    return (result.outcome == "FAIL" and bool(errors) and set(errors) <= allowed and
-            "[FAIL]" not in output and not RESTART.search(output) and response_complete(result.command, output))
+    valid_count = len(errors) == 1
+    if len(errors) == 2 and errors[0] == errors[1] and (result.command == "job cancel" or result.command.startswith("job step ")):
+        # Manual polling/cancellation reports its status and then the consumed
+        # terminal result's status. This is the only expected duplicate.
+        try:
+            one_record(output, "Operation result:", r"Operation result: token=[1-9]\d* kind=\w+\b.*")
+            positions = [match.start() for match in ERROR.finditer(output)]
+            valid_count = positions[0] < output.index("Operation result:") < positions[1]
+        except CheckError:
+            valid_count = False
+    return (result.outcome == "FAIL" and valid_count and set(errors) <= allowed and
+            "[FAIL]" not in output and not re.search(r"\[I\] OK\b", output) and
+            not RESTART.search(output) and response_complete(result.command, output))
+
+
+def validate_diagnostic(command: str, output: str, passed: int, skipped: int):
+    checks = ("transport binding", "initialized driver", "presence/configuration plausibility",
+              "live configuration and trust", "desired configuration and threshold readback",
+              "decoded thresholds and ordering", "temperature register format", "physical ALERT GPIO",
+              "coherent register snapshot")
+    full = ("rate 0.25 Hz", "rate 1 Hz", "rate 4 Hz", "rate 8 Hz", "continuous mode", "shutdown mode",
+            "normal format", "extended format", "comparator mode", "interrupt mode",
+            "active-low polarity", "active-high polarity", "fault queue 1", "fault queue 2",
+            "fault queue 4", "fault queue 6", "threshold window 0..50 C", "threshold window -10..30 C",
+            "restore captured profile")
+    expected = {"selfcheck": checks, "selftest full": full, "settings read": checks[3:6],
+                "snapshot read": checks[8:]}[command]
+    rows = [line.lstrip("> ") for line in clean(output).splitlines() if re.search(r"\[(?:PASS|SKIP)\]", line)]
+    parsed = [re.fullmatch(r"\[(PASS|SKIP)\] ([^:\n]+)(?:: .+)?", row) for row in rows]
+    if (any(row is None for row in parsed) or len(parsed) != len(expected) or
+            {row[2] for row in parsed} != set(expected) or
+            sum(row[1] == "PASS" for row in parsed) != passed or
+            sum(row[1] == "SKIP" for row in parsed) != skipped or
+            any(row[1] == "SKIP" and row[2] != "physical ALERT GPIO" for row in parsed)):
+        raise CheckError("diagnostic detail rows do not prove every required check exactly once")
 
 
 def parse_settings(output: str) -> dict:
     output = clean(output)
-    desired = re.search(r"Desired: model=(\S+) address=(0x[0-9A-Fa-f]+) timeout=(\d+) ms mode=(continuous|shutdown) rate=(0\.25|1|4|8)(?: Hz)? extended=(yes|no)", output)
-    thresholds = re.search(r"Thresholds: low=(-?\d+\.\d+) C high=(-?\d+\.\d+) C alert=(comparator|interrupt) polarity=(low|high) faults=([1246]) offline-threshold=(\d+)", output)
-    pin = re.search(r"physical ALERT=(available|not present) pin=(-?\d+)", output)
-    if not desired or not thresholds or not pin:
-        raise CheckError("cannot capture a complete desired profile from settings")
+    desired = one_record(output, "Desired:", r"Desired: model=(\S+) address=(0x[0-9A-Fa-f]+) timeout=(\d+) ms mode=(continuous|shutdown) rate=(0\.25|1|4|8)(?: Hz)? extended=(yes|no)")
+    thresholds = one_record(output, "Thresholds:", r"Thresholds: low=(-?\d+\.\d+) C high=(-?\d+\.\d+) C alert=(comparator|interrupt) polarity=(low|high) faults=([1246]) offline-threshold=(\d+)")
+    pin = one_record(output, "Address range:", r"Address range: 0x[0-9A-Fa-f]+\.\.0x[0-9A-Fa-f]+; physical ALERT=(available|not present) pin=(-?\d+)")
     profile = dict(model=desired[1], address=int(desired[2], 16), timeout_ms=int(desired[3]),
                 mode=desired[4], rate=desired[5], extended=desired[6] == "yes",
                 low=float(thresholds[1]), high=float(thresholds[2]), alert=thresholds[3],
@@ -313,11 +427,9 @@ def restore_commands(profile: dict) -> list[str]:
 
 def parse_health(output: str) -> dict:
     output = clean(output)
-    health = re.search(r"Health: state=(\w+) online=(yes|no) consec=(\d+) ok=(\d+) fail=(\d+)", output)
-    trust = re.search(r"Trust: bound=(yes|no) initialized=(yes|no) dirty=(yes|no)", output)
-    conversion = re.search(r"Conversion: pending=(yes|no) ready=(yes|no)", output)
-    if not health or not trust or not conversion:
-        raise CheckError("missing complete health/trust/conversion report")
+    health = one_record(output, "Health:", r"Health: state=(\w+) online=(yes|no) consec=(\d+) ok=(\d+) fail=(\d+)")
+    trust = one_record(output, "Trust:", r"Trust: bound=(yes|no) initialized=(yes|no) dirty=(yes|no) last-ok=\d+ ms last-error=\d+ ms \w+ detail=-?\d+")
+    conversion = one_record(output, "Conversion:", r"Conversion: pending=(yes|no) ready=(yes|no)")
     return dict(state=health[1], online=health[2] == "yes", consecutive=int(health[3]),
                 ok=int(health[4]), fail=int(health[5]), bound=trust[1] == "yes",
                 initialized=trust[2] == "yes", dirty=trust[3] == "yes", pending=conversion[1] == "yes")
@@ -325,19 +437,15 @@ def parse_health(output: str) -> dict:
 
 def parse_firmware(output: str) -> dict:
     output = clean(output)
-    banner = re.search(r"TMP1x2 diagnostic CLI\s*\|\s*(\S+) ([^|]+)\|\s*([^|]+)\|", output)
-    library = re.search(r"^Library: (\S+)", output, re.MULTILINE)
-    identity = re.search(r"^Firmware: git=(\S+) tree=(clean|dirty|unknown) built=([^\n]+)", output, re.MULTILINE)
-    if not banner or not library or not identity:
-        raise CheckError("missing complete firmware identity; rebuild the shared CLI")
+    banner = one_record(output, "TMP1x2 diagnostic CLI", r"TMP1x2 diagnostic CLI\s*\|\s*(\S+) ([^|]+)\|\s*([^|]+)\|.*")
+    library = one_record(output, "Library:", r"Library: (\S+)(?: \([^\n()]+\))?")
+    identity = one_record(output, "Firmware:", r"Firmware: git=(\S+) tree=(clean|dirty|unknown) built=([^\n]+)")
     return dict(framework=banner[1], framework_version=banner[2].strip(), target=banner[3].strip(),
                 library=library[1], commit=identity[1], tree=identity[2], built=identity[3].strip())
 
 
 def parse_counters(output: str) -> tuple[int, int, int]:
-    match = re.search(r"Bus: attempts=(\d+) ok=(\d+) fail=(\d+)", clean(output))
-    if not match:
-        raise CheckError("missing adapter counters")
+    match = one_record(output, "Bus:", r"Bus: attempts=(\d+) ok=(\d+) fail=(\d+)(?: \(includes raw/scan/probe; independent of driver health\))?")
     counts = tuple(map(int, match.groups()))
     if any(value >= 0xFFFFFFFF for value in counts):
         raise CheckError("saturated counters cannot establish exact transfer accounting")
@@ -348,11 +456,13 @@ def parse_counters(output: str) -> tuple[int, int, int]:
 
 def parse_discovery(output: str) -> dict:
     output = clean(output)
-    summary = DISCOVERY.search(output)
+    summary = one_record(output, "Discovery ", DISCOVERY)
     if not summary or summary[1] != "complete":
         raise CheckError("discovery did not complete")
     checked, ack, readable, candidates, incompatible, absent, errors = map(int, summary.groups()[1:])
     rows = re.findall(r"Discover address=0x([0-9A-Fa-f]{2}) config=(0x[0-9A-Fa-f]{4}|unavailable) candidate=(yes|no) code=(\w+) detail=-?\d+ identity=unverified", output)
+    if sum(line.lstrip("> ").startswith("Discover address=") for line in output.splitlines()) != 8:
+        raise CheckError("discovery contains missing or extra address records")
     addresses = {int(row[0], 16) for row in rows}
     if len(rows) != 8 or addresses != set(range(0x40, 0x44)) | set(range(0x48, 0x4C)):
         raise CheckError("discovery needs exactly one result for each legal address")
@@ -377,9 +487,7 @@ def parse_discovery(output: str) -> dict:
 
 
 def parse_console(output: str) -> dict:
-    match = re.search(SYNC_PATTERNS["console"], clean(output))
-    if not match:
-        raise CheckError("missing console output counters")
+    match = one_record(output, "Console:", SYNC_PATTERNS["console"])
     return {name: int(value) for name, value in re.findall(r"(queued|sent|dropped|truncated)=(\d+)", match[0])}
 
 
@@ -394,9 +502,12 @@ def check_console(output: str, baseline: dict) -> tuple[str, str]:
 
 
 def check_sample(output: str, minimum: float, maximum: float, extended=None, fresh=False) -> tuple[str, str]:
-    match = SAMPLE.search(clean(output))
-    if not match:
-        return "INCONCLUSIVE", "missing full temperature sample"
+    try:
+        match = one_record(output, "Temperature:", SAMPLE)
+    except CheckError as exc:
+        return "INCONCLUSIVE", str(exc)
+    if int(match[5]) > 0xFFFFFFFF:
+        return "FAIL", "sample timestamp is outside uint32 range"
     celsius, raw, counts = float(match[1]), int(match[2], 16), int(match[3])
     is_extended = match[4] == "yes"
     width, shift = (13, 3) if is_extended else (12, 4)
@@ -414,6 +525,17 @@ def check_sample(output: str, minimum: float, maximum: float, extended=None, fre
     if match[6] != "known" or (fresh and match[7] != "confirmed"):
         return "FAIL", "missing acquisition clock or confirmed one-shot provenance"
     return "PASS", "sample format, signed conversion and operator temperature window verified"
+
+
+def check_run_temperature(output: str, minimum: float, maximum: float) -> tuple[str, str]:
+    try:
+        match = one_record(output, "Temperature summary:", r"Temperature summary: min=(\S+) C max=(\S+) C mean=(\S+) C")
+        low, high, mean = map(float, match.groups())
+    except (CheckError, ValueError) as exc:
+        return "INCONCLUSIVE", str(exc)
+    if not all(math.isfinite(value) for value in (low, high, mean)) or not minimum <= low <= mean <= high <= maximum:
+        return "FAIL", "batch temperature extrema/mean are not finite, ordered and inside the operator window"
+    return "PASS", "all batch temperatures are inside the operator window"
 
 
 def check_format_continuity(temperatures: list[float], tolerance: float) -> tuple[str, str]:
@@ -455,6 +577,8 @@ class SerialSession:
         self.retained_chars = 0
         self.restarted = False
         self.framing_lost = False
+        self.last_operation_token = None
+        self.last_operation_kind = None
 
     def log(self, data: bytes):
         if self.transcript_file is not None and self.transcript_error is None:
@@ -505,18 +629,35 @@ class SerialSession:
         chunks = bytearray()
         complete = False
         write_attempted = False
+        marker = None
         self.log(f"\n=== {command} ===\n".encode("utf-8"))
+
+        def write(payload):
+            nonlocal write_attempted
+            remaining = deadline - self.clock()
+            if remaining <= 0:
+                raise OSError("command deadline expired before serial write")
+            if hasattr(self.serial, "write_timeout"):
+                self.serial.write_timeout = min(self.command_timeout, remaining)
+            write_attempted = True
+            if self.serial.write(payload) != len(payload):
+                raise OSError("partial serial command write")
+
         try:
             if self.framing_lost:
                 raise OSError("serial command framing was lost; command was not sent")
             if timeout <= 0:
                 raise OSError("command deadline already expired; command was not sent")
-            payload = (command + "\n").encode("ascii")
-            if hasattr(self.serial, "write_timeout"):
-                self.serial.write_timeout = min(self.command_timeout, timeout)
-            write_attempted = True
-            if self.serial.write(payload) != len(payload):
-                raise OSError("partial serial command write")
+            while getattr(self.serial, "in_waiting", 0):
+                pending = self.read(deadline)
+                self.log(pending)
+                self.retain(pending.decode("utf-8", errors="replace"))
+                if not pending or clean(pending.decode("utf-8", errors="replace")).strip("> \n\t"):
+                    self.framing_lost = True
+                    raise OSError("unsolicited serial payload before command; command was not sent")
+                if self.clock() >= deadline:
+                    raise OSError("deadline expired draining pending prompts")
+            write((command + "\n").encode("ascii"))
             # No serial.flush(): some host drivers have an unbounded drain wait.
             while self.clock() < deadline:
                 data = self.read(deadline)
@@ -525,19 +666,61 @@ class SerialSession:
                     if len(chunks) + len(data) > MAX_RESPONSE_BYTES:
                         raise OSError("response exceeded 8 MiB safety bound")
                     chunks.extend(data)
+                    if self.clock() >= deadline:
+                        raise OSError("response arrived after command deadline")
                     # CLI prompts end in these ASCII bytes. Avoid reparsing every
                     # sample in a long stress stream while no prompt is present.
-                    if chunks.endswith(b"> ") and response_complete(command, chunks.decode("utf-8", errors="replace")):
-                        complete = True
-                        break
-        except (OSError, KeyboardInterrupt) as exc:
+                    if not chunks.endswith(b"> "):
+                        continue
+                    output = clean(chunks.decode("utf-8", errors="replace"))
+                    if marker is not None and "CLI marker:" in output:
+                        found = one_record(output, "CLI marker:", r"CLI marker: token=([A-Za-z0-9_-]{1,32})")
+                        if found[1] != marker:
+                            raise OSError("wrong command marker")
+                        suffix = output.split("CLI marker: token=" + marker, 1)[1]
+                        if suffix.strip("> \n"):
+                            raise OSError("unexpected payload after command marker")
+                        if PROMPT.search(suffix):
+                            complete = True
+                            break
+                    elif marker is None and (response_complete(command, output) if command != "\x03" else
+                            bool(re.search(r"\[E\] INVALID_PARAM\b", output))):
+                        if "CLI marker:" in output:
+                            raise OSError("unsolicited command marker")
+                        marker = secrets.token_hex(16)
+                        write(("hilmark " + marker + "\n").encode("ascii"))
+        except (CheckError, OSError, KeyboardInterrupt) as exc:
             output = chunks.decode("utf-8", errors="replace")
             result = Result(command, command, "INCONCLUSIVE", str(exc) or "operator interrupted", output, self.clock() - started)
         else:
             output = chunks.decode("utf-8", errors="replace")
-            outcome, reason = classify(command, output, complete)
+            if complete:
+                output = output[:output.index("CLI marker:")]
+                # The marker follows an earlier prompt, so output retains the
+                # real command terminator and normal parser semantics.
+            if command == "\x03" and complete:
+                acknowledgement = clean(output).strip("> \n")
+                valid = acknowledgement == "[E] INVALID_PARAM detail=0: Invalid control character; command discarded"
+                outcome, reason = ("PASS", "pending input rejected and fresh marker verified") if valid else ("INCONCLUSIVE", "input synchronization was not proven")
+            else:
+                outcome, reason = classify(command, output, complete)
+            if complete and "Operation result:" in output and (command == "job cancel" or command.startswith("job step ")):
+                try:
+                    terminal = one_record(output, "Operation result:", r"Operation result: token=(\d+) kind=(\w+)\b.*")
+                    if (int(terminal[1]), terminal[2]) != (self.last_operation_token, self.last_operation_kind):
+                        raise CheckError("manual terminal result does not match the admitted operation")
+                except CheckError as exc:
+                    outcome, reason = "INCONCLUSIVE", str(exc)
+            if outcome == "PASS" and (is_operation(command) or command.startswith("job start ")):
+                admitted = operation_admission(command.split()[2] if command.startswith("job start ") else command, clean(output))
+                token = int(admitted[1])
+                if self.last_operation_token is not None and not advances_u32(token, self.last_operation_token):
+                    outcome, reason = "INCONCLUSIVE", "operation token did not advance"
+                else:
+                    self.last_operation_token = token
+                    self.last_operation_kind = admitted[2]
             result = Result(command, command, outcome, reason, output, self.clock() - started)
-        if write_attempted and not complete:
+        if write_attempted and (not complete or result.outcome == "INCONCLUSIVE"):
             # Partial command bytes or a delayed prior response make the next
             # prompt impossible to attribute safely. Do not guess with cleanup.
             self.framing_lost = True
@@ -546,9 +729,14 @@ class SerialSession:
         self.log(f"\n=== {result.outcome}: {result.reason} ===\n".encode("utf-8"))
         return result
 
+    def synchronize(self) -> Result:
+        # Poison a retained partial line before its newline can execute it.
+        # This is initial admission only, never a retry after lost framing.
+        return self.command("\x03")
+
 
 class Runner:
-    def __init__(self, session: SerialSession, args, clock: Callable = time.monotonic):
+    def __init__(self, session: SerialSession, args, clock: Callable = time.monotonic, evidence=None):
         self.session = session
         self.args = args
         self.results: list[Result] = []
@@ -569,6 +757,8 @@ class Runner:
         self.presentation_restoration = "not required"
         self.console_baseline = None
         self.bus = None
+        self.evidence = evidence
+        self.host_source_start = host_source()
         self.soak_summary = dict(outcome="NOT_RUN", requested_seconds=args.soak_seconds,
                                  reason="soak not requested" if not args.soak_seconds else "preceding suites have not completed")
 
@@ -630,6 +820,7 @@ class Runner:
         if self.original_verbose is None:
             output = clean(self.command("verbose").output)
             self.original_verbose = "Verbose: on" in output
+            self.checkpoint()
         self.presentation_restoration = "not verified"
         self.command("verbose 0")
 
@@ -869,7 +1060,11 @@ class Runner:
             self.mutated = True  # The sampler triggers physical OS writes.
         self.quiet_sampling()
         for command in (f"stress {self.args.stress_count}", f"stress_mix {self.args.stress_count}"):
-            self.command(command)
+            result = self.command(command)
+            outcome, reason = check_run_temperature(result.output, self.args.min_c, self.args.max_c)
+            self.record(Result("batch temperature window", command, outcome, reason))
+            if outcome != "PASS":
+                raise CheckError(reason)
             self.sample(entry["extended"], fresh=entry["mode"] == "shutdown")
             self.verify_console()
         # Check that cached observations after stop cause no hidden traffic.
@@ -877,11 +1072,7 @@ class Runner:
         before = self.command("xfer_stats").output
         time.sleep(self.args.silence_seconds)
         after = self.command("xfer_stats").output
-        extract = lambda text: re.search(r"Bus: attempts=(\d+) ok=(\d+) fail=(\d+)", text).groups()
-        if any(int(value) >= 0xFFFFFFFF for value in extract(before) + extract(after)):
-            self.record(Result("stop is bus-silent", "", "INCONCLUSIVE", "saturated counters cannot establish bus silence"))
-            raise CheckError("adapter counters saturated")
-        self.assertion("stop is bus-silent", extract(before) == extract(after), "adapter counters must remain unchanged after stop")
+        self.assertion("stop is bus-silent", parse_counters(before) == parse_counters(after), "adapter counters must remain unchanged after stop")
 
     def soak(self):
         self.background_started = True
@@ -889,6 +1080,9 @@ class Runner:
         if entry["mode"] == "shutdown":
             self.mutated = True
         self.quiet_sampling()
+        previous_health = parse_health(self.command("health").output)
+        previous_timestamp = None
+        batch_tracked = 0
         summary = self.soak_summary = dict(requested_seconds=self.args.soak_seconds,
             elapsed_seconds=0.0, batches=0, completed_cycles=0, samples=0,
             commands=0, outcomes={"PASS": 0, "FAIL": 0, "INCONCLUSIVE": 0},
@@ -921,16 +1115,37 @@ class Runner:
                 raise CheckError(result.reason)
 
         def healthy(output):
+            nonlocal previous_health
             health = parse_health(output)
             trusted = (health["state"] == "READY" and health["online"] and health["bound"] and
                        health["initialized"] and not health["dirty"] and not health["pending"])
+            if any(h[key] >= 0xFFFFFFFF for h in (health, previous_health) for key in ("ok", "fail")):
+                return "INCONCLUSIVE", "saturated health counters cannot establish batch accounting"
+            if health["ok"] - previous_health["ok"] != batch_tracked or health["fail"] != previous_health["fail"]:
+                return "FAIL", "cumulative health disagrees with batch transport delta"
+            previous_health = health
             return ("PASS", "ready and trusted after complete batch") if trusted else ("FAIL", "soak batch left unhealthy or untrusted driver")
+
+        def batch(output):
+            nonlocal batch_tracked
+            batch_tracked = int(one_record(output, "Tracked health delta:", r"Tracked health delta: ok=(\d+) fail=(\d+)")[1])
+            return check_run_temperature(output, self.args.min_c, self.args.max_c)
+
+        def sample(output):
+            nonlocal previous_timestamp
+            outcome, reason = check_sample(output, self.args.min_c, self.args.max_c, entry["extended"], entry["mode"] == "shutdown")
+            if outcome != "PASS":
+                return outcome, reason
+            timestamp = int(one_record(output, "Temperature:", SAMPLE)[5])
+            if previous_timestamp is not None and not advances_u32(timestamp, previous_timestamp):
+                return "FAIL", "new batch acquisition timestamp did not advance"
+            previous_timestamp = timestamp
+            return outcome, reason
 
         try:
             while self.clock() < deadline:
-                command(f"stress_mix {self.args.soak_batch_count}")
-                command("sample", lambda output: check_sample(output, self.args.min_c, self.args.max_c,
-                        entry["extended"], entry["mode"] == "shutdown"))
+                command(f"stress_mix {self.args.soak_batch_count}", batch)
+                command("sample", sample)
                 command("health", healthy)
                 command("console", lambda output: check_console(output, self.console_baseline))
                 summary["batches"] += 1
@@ -1058,7 +1273,6 @@ class Runner:
                 if time.monotonic() >= end:
                     break
                 result = self.session.command("tryread", timeout_s=end - time.monotonic())
-                error = ERROR.search(clean(result.output))
                 if expected_error(result, {"MEASUREMENT_NOT_READY"}):
                     result.outcome, result.reason = "PASS", "waiting for retained manual one-shot to finish"
                     self.record(result)
@@ -1117,6 +1331,7 @@ class Runner:
         current_suite = None
         try:
             self.preflight()
+            self.checkpoint()
             for suite in self.suites:
                 current_suite = suite
                 suite["outcome"] = "INCONCLUSIVE"
@@ -1135,12 +1350,29 @@ class Runner:
         finally:
             self.restore()
 
+    def checkpoint(self):
+        if self.evidence is not None:
+            report = build_report(self)
+            report["outcome"] = "INCONCLUSIVE"
+            report["reason"] = "run in progress; captured profile retained before mutation"
+            self.evidence.write_json(report)
+
 
 def git_value(*args: str) -> str:
     try:
         return subprocess.check_output(["git", *args], cwd=ROOT, text=True, stderr=subprocess.DEVNULL, timeout=5).strip()
     except (OSError, subprocess.SubprocessError):
         return "unknown"
+
+
+def host_source() -> dict:
+    dirty = git_value("status", "--porcelain")
+    try:
+        digest = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    except OSError:
+        digest = "unknown"
+    return dict(commit=git_value("rev-parse", "HEAD"), dirty=None if dirty == "unknown" else bool(dirty),
+                runner_sha256=digest)
 
 
 def write_report(path: Path, runner: Runner, evidence=None) -> int:
@@ -1175,18 +1407,23 @@ def write_report(path: Path, runner: Runner, evidence=None) -> int:
                 print(f"Could not remove HIL reservation lock; preserve the completed evidence: {exc}", file=sys.stderr)
 
 
-def _write_report(path: Path, runner: Runner, evidence: EvidenceFiles) -> int:
+def build_report(runner: Runner) -> dict:
     counts = {outcome: sum(result.outcome == outcome for result in runner.results) for outcome in ("PASS", "FAIL", "SKIP", "INCONCLUSIVE")}
-    outcome = "FAIL" if counts["FAIL"] else "INCONCLUSIVE" if counts["INCONCLUSIVE"] or not counts["PASS"] else "PASS"
-    dirty_status = git_value("status", "--porcelain")
+    complete = (all(suite["outcome"] == "PASS" for suite in runner.suites) and
+                (not runner.args.soak_seconds or runner.soak_summary["outcome"] == "PASS") and
+                (not runner.mutated or runner.restoration == "verified") and
+                (runner.original_verbose is None or runner.presentation_restoration == "verified"))
+    failed = counts["FAIL"] or any(suite["outcome"] == "FAIL" for suite in runner.suites) or runner.soak_summary["outcome"] == "FAIL"
+    outcome = "FAIL" if failed else "INCONCLUSIVE" if counts["INCONCLUSIVE"] or not counts["PASS"] or not complete else "PASS"
+    start, end = runner.host_source_start, host_source()
     report = dict(schema_version=2, recorded_utc=dt.datetime.now(dt.timezone.utc).isoformat(),
                   outcome=outcome, scope="selected automated checks only; physical accuracy/ALERT/timing require separate evidence",
-                  hardware_run=bool(getattr(runner.session, "hardware_connected", False)), metadata=vars(runner.args), git_commit=git_value("rev-parse", "HEAD"),
-                  git_dirty=None if dirty_status == "unknown" else bool(dirty_status), baseline=runner.baseline,
+                  hardware_run=bool(getattr(runner.session, "hardware_connected", False)), metadata=vars(runner.args), git_commit=start["commit"],
+                  git_dirty=start["dirty"], baseline=runner.baseline,
                   firmware=runner.firmware, firmware_verification=runner.firmware_verification,
                   bus=runner.bus, console_baseline=runner.console_baseline, soak=runner.soak_summary,
-                  original_verbose=runner.original_verbose, presentation_restoration=runner.presentation_restoration,
-                  host_source=dict(commit=git_value("rev-parse", "HEAD"), dirty=None if dirty_status == "unknown" else bool(dirty_status)),
+                  original_verbose=runner.original_verbose, original_auto=runner.original_auto, presentation_restoration=runner.presentation_restoration,
+                  host_source=dict(commit=start["commit"], dirty=start["dirty"], start=start, end=end, changed=start != end),
                   restoration=runner.restoration, counts=counts, suites=runner.suites,
                   manual_gates=[dict(name=name, outcome="NOT_RUN") for name in
                                 ("calibrated thermal accuracy", "exact conversion and fault-queue timing",
@@ -1194,6 +1431,12 @@ def _write_report(path: Path, runner: Runner, evidence: EvidenceFiles) -> int:
                                  "ARA arbitration", "general-call reset", "bus electrical margins", "shared-bus concurrent owner isolation",
                                  "USB host stalls and data-only disconnect")],
                   results=[asdict(result) for result in runner.results])
+    return report
+
+
+def _write_report(path: Path, runner: Runner, evidence: EvidenceFiles) -> int:
+    report = build_report(runner)
+    outcome = report["outcome"]
     evidence.write_json(report)
     print(f"{outcome}: {path}; restoration: {runner.restoration}")
     return 1 if outcome == "FAIL" else 2 if outcome == "INCONCLUSIVE" else 0
@@ -1271,7 +1514,7 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     if args.dry_run:
         print("DRY RUN: no serial connection, hardware result or firmware upload")
-        print("preflight: version/firmware identity; bus; console loss baseline; job; stats; job auto; settings; health; verify")
+        print("preflight: reject partial input; nonce-framed version/firmware identity; bus; console loss baseline; job; stats; job auto; settings; health; verify; durable profile checkpoint")
         descriptions = {
             "detection": "opt-in address probes + CONFIG plausibility at eight legal addresses; preserve target/profile/health; exact adapter accounting",
             "smoke": "probe; settings read; snapshot read; selfcheck; read; sample; xfer_stats",
@@ -1287,7 +1530,7 @@ def main(argv=None) -> int:
         for suite in args.suite:
             print(f"{suite}: {descriptions[suite]}")
         if args.soak_seconds:
-            print(f"soak: quiet stress_mix {args.soak_batch_count} batches for at least {args.soak_seconds:g} seconds; complete-cycle/sample/health/console checks; bounded aggregate history")
+            print(f"soak: quiet stress_mix {args.soak_batch_count} batches for at least {args.soak_seconds:g} seconds; complete cycles, thermal extrema, advancing samples, health deltas and console checks; bounded aggregate history")
             print("finally: stop once; restore original verbose; restore desired profile if shutdown conversions were used")
         if MUTATING.intersection(args.suite):
             print("finally: stop once; restore captured profile using recover/typed settings; verify snapshot and health")
@@ -1301,7 +1544,7 @@ def main(argv=None) -> int:
         return 2
     connection = None
     session = SerialSession(None, args.command_timeout, args.long_timeout, transcript_file=evidence.transcript)
-    runner = Runner(session, args)
+    runner = Runner(session, args, evidence=evidence)
     try:
         import serial
         connection = serial.Serial(port=None, baudrate=args.baud, timeout=0.05, write_timeout=args.command_timeout)
@@ -1312,7 +1555,8 @@ def main(argv=None) -> int:
         connection.open()
         session.hardware_connected = True
         session.capture_boot(args.startup_seconds)
-        runner.run()
+        if runner.record(session.synchronize()).outcome == "PASS":
+            runner.run()
     except ImportError:
         runner.record(Result("serial setup", "", "INCONCLUSIVE", "pyserial is required: python -m pip install pyserial"))
     except (OSError, ValueError, KeyboardInterrupt) as exc:

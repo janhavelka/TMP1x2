@@ -74,6 +74,9 @@ Use `.exe` on Windows and the configuration subdirectory when required. The
 first command skips tests that need the compiled fixture. A parser-only pass is
 not the full runner regression result. `--dry-run` on the hardware runner lists
 suites and side effects without opening a serial port or producing HIL evidence.
+The fixture includes two campaigns against one running CLI process, with separate
+evidence and verified restoration. Controlled serial tests cover nonce framing,
+FIFO ordering, duplicate/late records, interrupted checkpoints and soak evidence.
 
 ## Framework builds
 
