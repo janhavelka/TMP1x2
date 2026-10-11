@@ -24,6 +24,7 @@
 
 - Bound example console output service during host stalls, retain partial writes,
   expose output loss and backend identity, and avoid blocking USB TX waits.
+- Support ROM CDC startup on IDF 5.3 and its separate console component in IDF 6.
 - Accumulate watch elapsed time across 32-bit clock wrap for long-running tests.
 - Fail CLI snapshot/settings/self-check diagnostics when successful reads expose
   configuration drift or untrusted temperature, rather than reporting PASS.

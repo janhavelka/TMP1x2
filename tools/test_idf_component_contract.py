@@ -37,7 +37,7 @@ class IdfComponentContract(unittest.TestCase):
         (checkout / ".gitignore").write_text("ignored.txt\n", encoding="utf-8")
         return checkout
 
-    def configure(self, checkout):
+    def configure(self, checkout, idf_major=5):
         # A real build target exercises generated-header ordering and refresh.
         # Registration/includes are checked without simulating an SDK compiler.
         (self.workspace / "CMakeLists.txt").write_text(
@@ -46,6 +46,9 @@ project(tmp1x2_idf_contract NONE)
 function(idf_component_register)
   cmake_parse_arguments(COMP "" "" "SRCS;INCLUDE_DIRS;REQUIRES" ${ARGN})
   set(expected "${CHECKOUT_NAME};esp_driver_i2c;esp_timer;esp_driver_gpio;esp_driver_uart;esp_driver_usb_serial_jtag")
+  if(IDF_VERSION_MAJOR GREATER_EQUAL 6)
+    list(APPEND expected esp_usb_cdc_rom_console)
+  endif()
   if(NOT "${COMP_REQUIRES}" STREQUAL "${expected}")
     message(FATAL_ERROR "Component dependencies '${COMP_REQUIRES}' != '${expected}'")
   endif()
@@ -68,7 +71,8 @@ add_subdirectory("${CHECKOUT_NAME}/examples/esp_idf/basic/main" main)
         generator = ("-G", "Ninja") if shutil.which("ninja") else ()
         self.run_command("cmake", "-S", str(self.workspace), "-B",
                          str(self.workspace / "build"), *generator,
-                         "-DCHECKOUT_NAME=" + checkout.name)
+                         "-DCHECKOUT_NAME=" + checkout.name,
+                         "-DIDF_VERSION_MAJOR=" + str(idf_major))
 
     def build_identity(self):
         self.run_command("cmake", "--build", str(self.workspace / "build"),
@@ -119,10 +123,12 @@ add_subdirectory("${CHECKOUT_NAME}/examples/esp_idf/basic/main" main)
         for checkout_name in ("TMP1x2", "TMP1x2-1.0.0"):
             with self.subTest(checkout=checkout_name):
                 checkout = self.prepare(checkout_name)
-                self.configure(checkout)
-                values = self.build_identity()
-                self.assertEqual(values["GIT_COMMIT"], "unknown")
-                self.assertEqual(values["GIT_STATUS"], "unknown")
+                for idf_major in (5, 6):
+                    with self.subTest(idf_major=idf_major):
+                        self.configure(checkout, idf_major)
+                        values = self.build_identity()
+                        self.assertEqual(values["GIT_COMMIT"], "unknown")
+                        self.assertEqual(values["GIT_STATUS"], "unknown")
 
     @unittest.skipUnless(shutil.which("git"), "Git is required for provenance tests")
     def test_clean_dirty_and_new_commit_refresh_without_reconfigure(self):

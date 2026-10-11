@@ -32,6 +32,15 @@ regenerated its cached default values; see `native-defaults.log`. The ten-suite 
 opened no port and generated no hardware evidence. Host tests of clock wrap and
 12,000 batches do not establish elapsed-time reliability on a powered board.
 
+The first CI matrix exposed two S2 ROM CDC compatibility gaps: IDF 5.3.2 has no
+installed-state query, and IDF 6.0.1 moved the API into
+[`esp_usb_cdc_rom_console`](https://github.com/espressif/esp-idf/tree/v6.0.1/components/esp_usb_cdc_rom_console).
+The adapter now relies on the SDK's existing startup initialization, as shown in
+the [IDF 5.3 console registration](https://github.com/espressif/esp-idf/blob/v5.3.2/components/esp_vfs_console/vfs_console.c),
+and declares the separate component for IDF 6. Host registration tests exercise
+both dependency layouts; they do not substitute for the CI firmware links.
+Local USB rebuild results after this correction are in `native-usb-compat.log`.
+
 ## 2026-10-11 CLI and sibling-test audit
 
 The [comparison](library-comparison.md) records sixteen inspected sibling

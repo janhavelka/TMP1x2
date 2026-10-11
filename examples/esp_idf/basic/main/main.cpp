@@ -107,8 +107,9 @@ esp_err_t initializeConsole() {
   if (result == ESP_OK) usb_serial_jtag_vfs_use_driver();
   return result;
 #elif CONFIG_ESP_CONSOLE_USB_CDC
-  // The startup console has already initialized the ROM CDC device.
-  return esp_usb_console_is_installed() ? ESP_OK : ESP_ERR_INVALID_STATE;
+  // IDF initializes the selected ROM CDC console before app_main. No second
+  // installation is needed; the installed-state query is absent in IDF 5.3.
+  return ESP_OK;
 #else
   const auto port = static_cast<uart_port_t>(CONFIG_ESP_CONSOLE_UART_NUM);
   const esp_err_t result = uart_driver_install(port, 256, 0, 0, nullptr, 0);
