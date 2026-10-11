@@ -38,7 +38,7 @@ On Windows, add `-G Ninja` when using an installed Ninja/GCC toolchain, or
 build with `--config Debug`, and pass `-C Debug` to CTest. Use a new build directory
 when changing compilers or generators.
 
-CTest runs core register tests, shared CLI tests, owner operations, model/address
+CTest runs core register tests, shared CLI and bounded-console tests, owner operations, model/address
 variants, field helpers, shared-bus operations, framework-free headers, version
 synchronization, IDF component naming/build identity, documentation checker regressions, and
 the Python HIL runner tests. The HIL
@@ -48,7 +48,12 @@ test into a failure. Logs are in `build-tests/Testing/Temporary/LastTest.log`.
 The CLI checks include manual transfer budgets, bus-silent cancellation and
 invalidation, exact counter assertions, malformed commands, and failures caused
 by untrusted live diagnostics. Runner tests exercise these workflows through
-the compiled CLI as well as fragmented and invalid serial responses.
+the compiled CLI as well as fragmented and invalid serial responses. Console
+tests cover partial writes, host stalls, wraparound, bounded service, overflow
+markers and saturating counters. Discovery tests distinguish address ACK,
+plausible CONFIG and transport failures without changing driver health. Fake
+clock soaks check thousands of complete batches without growing per-pass results;
+compiled CLI runs verify quiet sampling and presentation restoration.
 
 On Linux with GCC or Clang, use a separate sanitizer build:
 
@@ -86,6 +91,16 @@ PlatformIO `native` runs the core subset; the CMake suite above is required for
 the CLI, job, helper, bus and Python tests. `native_core_no_arduino` compiles and
 links a consumer without a framework. Both firmware commands must reach a full
 application link and binary generation.
+
+Console changes need a build with each selected backend. Fresh IDF defaults use
+USB Serial/JTAG on S3 and ROM CDC on S2, with `CONFIG_FREERTOS_HZ=1000`.
+An explicit SDK console selection overrides defaults and may still select UART;
+SDK-generated default values can instead follow new defaults on regeneration.
+Inspect the generated SDK configuration and the running `console` output.
+To check fresh defaults while preserving local settings, use a separate
+`board_build.esp-idf.sdkconfig_path` in a local PlatformIO project configuration,
+or a separate `SDKCONFIG` path with native IDF. Build UART too when changing its
+adapter branch. See [example console settings](../examples/README.md).
 
 In an exported ESP-IDF environment, validate the native front end separately:
 

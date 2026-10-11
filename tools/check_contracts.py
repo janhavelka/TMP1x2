@@ -13,6 +13,12 @@ FRAMEWORK_INCLUDE = re.compile(
     r'esp_|driver/|freertos/|FreeRTOS\.h|sdkconfig\.h)', re.M)
 
 
+def code_only(text):
+    # Diagnostic strings and comments are not C++ framework dependencies.
+    return re.sub(r"""/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'""",
+                  "", text, flags=re.S)
+
+
 def main():
     errors = []
     # The shared example command processor must stay portable too: platform
@@ -24,10 +30,7 @@ def main():
             text = path.read_text(encoding="utf-8")
             if FRAMEWORK_INCLUDE.search(text):
                 errors.append(f"framework include in {path.relative_to(ROOT)}")
-            # Ignore diagnostic prose such as "new session" when checking for
-            # operators and calls; string contents are not executable C++.
-            code = re.sub(r"""/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'""",
-                          "", text, flags=re.S)
+            code = code_only(text)
             if re.search(r"\b(?:delay|malloc|calloc|realloc|printf)\s*\(|\bnew\s+\w|\b(?:Serial|Wire)\s*[.]", code):
                 errors.append(f"allocation/logging/framework call in {path.relative_to(ROOT)}")
     metadata = json.loads((ROOT / "library.json").read_text())
@@ -36,8 +39,11 @@ def main():
     if result.returncode:
         errors.append("generated release metadata mismatch")
     idf = ROOT / "examples/esp_idf/basic/main/main.cpp"
-    if idf.exists() and re.search(r'#include\s*[<"](?:Arduino|Wire)|\b(?:Serial|TwoWire|String)\b', idf.read_text()):
-        errors.append("Arduino dependency in native IDF example")
+    if idf.exists():
+        text = idf.read_text(encoding="utf-8")
+        if (re.search(r'#\s*include\s*[<"](?:Arduino|Wire)', text) or
+                re.search(r'\b(?:Serial|TwoWire|String)\b', code_only(text))):
+            errors.append("Arduino dependency in native IDF example")
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1

@@ -45,7 +45,7 @@ class IdfComponentContract(unittest.TestCase):
 project(tmp1x2_idf_contract NONE)
 function(idf_component_register)
   cmake_parse_arguments(COMP "" "" "SRCS;INCLUDE_DIRS;REQUIRES" ${ARGN})
-  set(expected "${CHECKOUT_NAME};esp_driver_i2c;esp_timer;esp_driver_gpio")
+  set(expected "${CHECKOUT_NAME};esp_driver_i2c;esp_timer;esp_driver_gpio;esp_driver_uart;esp_driver_usb_serial_jtag")
   if(NOT "${COMP_REQUIRES}" STREQUAL "${expected}")
     message(FATAL_ERROR "Component dependencies '${COMP_REQUIRES}' != '${expected}'")
   endif()

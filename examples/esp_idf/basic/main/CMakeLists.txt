@@ -9,6 +9,7 @@ idf_component_register(
        "../../../common/Tmp1x2CliOutput.cpp"
   INCLUDE_DIRS "../../../common" "../../../../include"
   REQUIRES ${TMP1X2_COMPONENT_NAME} esp_driver_i2c esp_timer esp_driver_gpio
+           esp_driver_uart esp_driver_usb_serial_jtag
 )
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_17)
 

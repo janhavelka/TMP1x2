@@ -29,6 +29,10 @@ else()
     target_include_directories(tmp1x2_cli_tests PRIVATE examples/common)
     target_link_libraries(tmp1x2_cli_tests PRIVATE TMP1x2)
     add_test(NAME cli COMMAND tmp1x2_cli_tests)
+    add_executable(tmp1x2_console_tests test/console/test_console.cpp)
+    target_include_directories(tmp1x2_console_tests PRIVATE examples/common)
+    target_compile_features(tmp1x2_console_tests PRIVATE cxx_std_17)
+    add_test(NAME console COMMAND tmp1x2_console_tests)
     add_executable(tmp1x2_job_tests test/jobs/test_jobs.cpp)
     target_link_libraries(tmp1x2_job_tests PRIVATE TMP1x2)
     add_test(NAME jobs COMMAND tmp1x2_job_tests)
@@ -54,7 +58,7 @@ else()
     add_test(NAME hil_runner
       COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_hil_tmp1x2_runner.py"
         --cli-fixture $<TARGET_FILE:tmp1x2_cli_tests>)
-    set_tests_properties(core cli jobs variants helpers bus core_no_arduino
+    set_tests_properties(core cli console jobs variants helpers bus core_no_arduino
       version_sync idf_component_contract doxygen_checker PROPERTIES TIMEOUT 120)
     set_tests_properties(hil_runner PROPERTIES TIMEOUT 180)
   endif()

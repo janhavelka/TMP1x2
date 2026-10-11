@@ -3,7 +3,8 @@
 
 Only pyserial is optional; dry-run, parsing and unit tests use the standard library.
 Exit 0: selected automated checks passed; 1: failed check; 2: inconclusive/setup error.
-This runner never flashes firmware, changes model/address, scans, or resets the bus.
+This runner never flashes firmware, changes model/address, or resets the bus.
+Only the explicitly selected detection suite probes other legal chip addresses.
 """
 from __future__ import annotations
 
@@ -29,6 +30,7 @@ ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 PROMPT = re.compile(r"(?:^|\n)(?:> )+$")
 ERROR = re.compile(r"\[E\]\s+(\w+)")
 DIAGNOSTIC = re.compile(r"Diagnostic summary: (complete|cancelled|active) pass=(\d+) fail=(\d+) skip=(\d+)")
+DISCOVERY = re.compile(r"Discovery (complete|cancelled): checked=(\d+) ack=(\d+) readable=(\d+) candidates=(\d+) incompatible=(\d+) absent=(\d+) errors=(\d+) identity=unverified")
 RUN = re.compile(r"Run: (active|stopped) target=(\d+) completed=(\d+) ok=(\d+) fail=(\d+) elapsed=(\d+) ms remaining=(\d+)")
 SAMPLE = re.compile(r"Temperature: ([+-]?\d+\.\d+) C raw=0x([0-9A-Fa-f]{4}) counts=(-?\d+) extended=(yes|no) timestamp=(\d+) ms clock=(known|unknown) one-shot=(confirmed|unproven)")
 TRANSPORT_ERRORS = {"I2C_ERROR", "I2C_NACK_ADDR", "I2C_NACK_DATA", "I2C_TIMEOUT", "I2C_BUS", "DEVICE_NOT_FOUND", "TIMEOUT"}
@@ -60,6 +62,11 @@ SYNC_PATTERNS = {
     "job auto 0": r"Job auto: off",
     "job auto 1": r"Job auto: on",
     "job cancel": r"Operation result:|\[I\] OK\b",
+    "verbose": r"Verbose: (?:on|off)",
+    "verbose 0": r"Verbose: off",
+    "verbose 1": r"Verbose: on",
+    "console": r"Console: queued=\d+ sent=\d+ dropped=\d+ truncated=\d+",
+    "bus": r"Bus settings: SDA=-?\d+ SCL=-?\d+ frequency=\d+ Hz timeout=\d+ ms",
 }
 
 
@@ -174,6 +181,8 @@ def response_complete(command: str, output: str) -> bool:
         return terminal is not None and terminal[2] != "IN_PROGRESS"
     if command in {"selfcheck", "selftest full", "settings read", "snapshot read"}:
         return bool(DIAGNOSTIC.search(output) or ERROR.search(output))
+    if command in {"discover", "detect"}:
+        return bool(ERROR.search(output) or re.search(DISCOVERY.pattern + r"\n\[I\] OK\b", output))
     if command.startswith(("stress ", "stress_mix ")):
         return bool(re.search(r"Run: stopped ", output) or ERROR.search(output))
     if command == "stop":
@@ -217,6 +226,16 @@ def classify(command: str, output: str, completed: bool = True) -> tuple[str, st
             return "FAIL", "captured baseline restoration was not verified"
         if command in {"selfcheck", "snapshot read"} and SNAPSHOT_TRUST not in output:
             return "FAIL", "snapshot configuration, thresholds or temperature are untrusted"
+    elif command in {"discover", "detect"}:
+        summary = DISCOVERY.search(output)
+        if summary and int(summary[8]):
+            return "FAIL", "discovery recorded transport errors"
+        if not response_complete(command, output):
+            return "INCONCLUSIVE", "missing successful terminal discovery status"
+        try:
+            parse_discovery(output)
+        except CheckError as exc:
+            return "INCONCLUSIVE", str(exc)
     elif command.startswith(("stress ", "stress_mix ")):
         run = RUN.search(output)
         if not run:
@@ -325,6 +344,53 @@ def parse_counters(output: str) -> tuple[int, int, int]:
     if counts[0] != counts[1] + counts[2]:
         raise CheckError("inconsistent adapter counters")
     return counts
+
+
+def parse_discovery(output: str) -> dict:
+    output = clean(output)
+    summary = DISCOVERY.search(output)
+    if not summary or summary[1] != "complete":
+        raise CheckError("discovery did not complete")
+    checked, ack, readable, candidates, incompatible, absent, errors = map(int, summary.groups()[1:])
+    rows = re.findall(r"Discover address=0x([0-9A-Fa-f]{2}) config=(0x[0-9A-Fa-f]{4}|unavailable) candidate=(yes|no) code=(\w+) detail=-?\d+ identity=unverified", output)
+    addresses = {int(row[0], 16) for row in rows}
+    if len(rows) != 8 or addresses != set(range(0x40, 0x44)) | set(range(0x48, 0x4C)):
+        raise CheckError("discovery needs exactly one result for each legal address")
+    found, rejected, missing = set(), 0, 0
+    for address, raw, candidate, code in rows:
+        if raw == "unavailable":
+            if candidate != "no" or code not in {"I2C_NACK_ADDR", "DEVICE_NOT_FOUND"}:
+                raise CheckError("discovery row reports an unresolved transport error")
+            missing += 1
+        else:
+            valid = (int(raw, 16) & 0x600F) == 0x6000
+            if (candidate == "yes") != valid or code != ("OK" if valid else "CONFIG_MISMATCH"):
+                raise CheckError("discovery candidate flag disagrees with CONFIG fixed bits")
+            if valid:
+                found.add(int(address, 16))
+            else:
+                rejected += 1
+    if ((checked, ack, readable, candidates, incompatible, absent, errors) !=
+            (8, len(found) + rejected, len(found) + rejected, len(found), rejected, missing, 0) or not found):
+        raise CheckError("discovery summary does not match complete per-address evidence")
+    return dict(ack=ack, candidates=found, absent=absent)
+
+
+def parse_console(output: str) -> dict:
+    match = re.search(SYNC_PATTERNS["console"], clean(output))
+    if not match:
+        raise CheckError("missing console output counters")
+    return {name: int(value) for name, value in re.findall(r"(queued|sent|dropped|truncated)=(\d+)", match[0])}
+
+
+def check_console(output: str, baseline: dict) -> tuple[str, str]:
+    current = parse_console(output)
+    for name in ("dropped", "truncated"):
+        if current[name] >= 0xFFFFFFFF or baseline[name] >= 0xFFFFFFFF:
+            return "INCONCLUSIVE", "saturated console loss counters cannot prove intact output"
+        if current[name] != baseline[name]:
+            return "FAIL", "console dropped or truncated output during this session"
+    return "PASS", "no new console dropped or truncated output"
 
 
 def check_sample(output: str, minimum: float, maximum: float, extended=None, fresh=False) -> tuple[str, str]:
@@ -482,7 +548,7 @@ class SerialSession:
 
 
 class Runner:
-    def __init__(self, session: SerialSession, args):
+    def __init__(self, session: SerialSession, args, clock: Callable = time.monotonic):
         self.session = session
         self.args = args
         self.results: list[Result] = []
@@ -491,11 +557,20 @@ class Runner:
         self.mutated = False
         self.background_started = False
         self.suites = [dict(name=name, outcome="NOT_RUN") for name in args.suite]
+        if args.soak_seconds:
+            self.suites.append(dict(name="soak", outcome="NOT_RUN"))
         self.retained_chars = 0
         self.cleanup_active = False
         self.firmware = None
         self.original_auto = None
         self.firmware_verification = "not requested"
+        self.clock = clock
+        self.original_verbose = None
+        self.presentation_restoration = "not required"
+        self.console_baseline = None
+        self.bus = None
+        self.soak_summary = dict(outcome="NOT_RUN", requested_seconds=args.soak_seconds,
+                                 reason="soak not requested" if not args.soak_seconds else "preceding suites have not completed")
 
     def record(self, result: Result) -> Result:
         if len(self.results) >= MAX_RESULTS and not self.cleanup_active:
@@ -544,6 +619,20 @@ class Runner:
                        "requires READY, trusted initialized configuration and no pending one-shot")
         return health
 
+    def verify_console(self):
+        result = self.command("console")
+        outcome, reason = check_console(result.output, self.console_baseline)
+        self.record(Result("console output integrity", "console", outcome, reason))
+        if outcome != "PASS":
+            raise CheckError(reason)
+
+    def quiet_sampling(self):
+        if self.original_verbose is None:
+            output = clean(self.command("verbose").output)
+            self.original_verbose = "Verbose: on" in output
+        self.presentation_restoration = "not verified"
+        self.command("verbose 0")
+
     def preflight(self):
         self.firmware = parse_firmware(self.command("version").output)
         expected_identity = self.args.expected_firmware_commit or self.args.expected_framework or self.args.expected_target or self.args.require_clean_firmware
@@ -567,6 +656,9 @@ class Runner:
                            "firmware must report a clean source tree")
         if expected_identity:
             self.firmware_verification = "matched requested fields"
+        self.bus = clean(self.command("bus").output)
+        self.console_baseline = parse_console(self.command("console").output)
+        self.verify_console()
         job = self.command("job").output
         self.assertion("idle owner operation", "Operation: active=no " in clean(job) and "active=yes" not in clean(job), "CLI must have no active operation or diagnostic")
         stats = self.command("stats").output
@@ -593,6 +685,25 @@ class Runner:
         self.command("read")
         self.sample(entry["extended"])
         self.command("xfer_stats")
+
+    def detection(self):
+        # Opt-in: CONFIG reads at other legal addresses can acknowledge ALERT.
+        self.background_started = True
+        profile = parse_settings(self.command("settings").output)
+        health = parse_health(self.command("health").output)
+        before = parse_counters(self.command("xfer_stats").output)
+        found = parse_discovery(self.command("discover").output)
+        self.assertion("selected target is a plausible candidate", self.args.address in found["candidates"],
+                       "selected BOM address must pass CONFIG plausibility; this is not a unique chip ID")
+        after = parse_counters(self.command("xfer_stats").output)
+        self.assertion("discovery transfer accounting", tuple(a - b for a, b in zip(after, before)) ==
+                       (8 + found["ack"], 2 * found["ack"], found["absent"]),
+                       "eight address probes plus one CONFIG read per ACK; expected NACKs remain adapter failures")
+        self.assertion("discovery preserves passive health", parse_health(self.command("health").output) == health,
+                       "discovery must bypass tracked driver health and configuration trust")
+        self.assertion("discovery preserves selected profile", parse_settings(self.command("settings").output) == profile,
+                       "discovery must not select a different model, address or configuration")
+        self.verify_console()
 
     def config(self):
         entry = parse_settings(self.command("settings").output)
@@ -753,11 +864,14 @@ class Runner:
 
     def stress(self):
         self.background_started = True
-        if parse_settings(self.command("settings").output)["mode"] == "shutdown":
+        entry = parse_settings(self.command("settings").output)
+        if entry["mode"] == "shutdown":
             self.mutated = True  # The sampler triggers physical OS writes.
+        self.quiet_sampling()
         for command in (f"stress {self.args.stress_count}", f"stress_mix {self.args.stress_count}"):
             self.command(command)
-            self.sample(fresh=parse_settings(self.command("settings").output)["mode"] == "shutdown")
+            self.sample(entry["extended"], fresh=entry["mode"] == "shutdown")
+            self.verify_console()
         # Check that cached observations after stop cause no hidden traffic.
         self.command("stop")
         before = self.command("xfer_stats").output
@@ -768,6 +882,86 @@ class Runner:
             self.record(Result("stop is bus-silent", "", "INCONCLUSIVE", "saturated counters cannot establish bus silence"))
             raise CheckError("adapter counters saturated")
         self.assertion("stop is bus-silent", extract(before) == extract(after), "adapter counters must remain unchanged after stop")
+
+    def soak(self):
+        self.background_started = True
+        entry = parse_settings(self.command("settings").output)
+        if entry["mode"] == "shutdown":
+            self.mutated = True
+        self.quiet_sampling()
+        summary = self.soak_summary = dict(requested_seconds=self.args.soak_seconds,
+            elapsed_seconds=0.0, batches=0, completed_cycles=0, samples=0,
+            commands=0, outcomes={"PASS": 0, "FAIL": 0, "INCONCLUSIVE": 0},
+            latency_total_seconds=0.0, latency_min_seconds=None, latency_max_seconds=0.0,
+            latency_mean_seconds=0.0, outcome="INCONCLUSIVE", reason="soak has not completed")
+        started = self.clock()
+        deadline = started + self.args.soak_seconds
+        next_progress = started + self.args.soak_progress_seconds
+
+        def command(text, validate=None):
+            result = self.session.command(text)
+            if result.outcome == "PASS" and validate is not None:
+                try:
+                    result.outcome, result.reason = validate(result.output)
+                except CheckError as exc:
+                    result.outcome, result.reason = "INCONCLUSIVE", str(exc)
+            if result.outcome == "PASS":
+                self.session.log(f"\n=== soak validated: {text}: {result.reason} ===\n".encode("utf-8"))
+            if self.session.transcript_error is not None and result.outcome == "PASS":
+                result.outcome, result.reason = "INCONCLUSIVE", "transcript write failed: " + self.session.transcript_error
+            summary["commands"] += 1
+            summary["outcomes"][result.outcome] += 1
+            summary["latency_total_seconds"] += result.duration_s
+            minimum = summary["latency_min_seconds"]
+            summary["latency_min_seconds"] = result.duration_s if minimum is None else min(minimum, result.duration_s)
+            summary["latency_max_seconds"] = max(summary["latency_max_seconds"], result.duration_s)
+            if result.outcome != "PASS":
+                summary["outcome"], summary["reason"] = result.outcome, result.reason
+                self.record(result)
+                raise CheckError(result.reason)
+
+        def healthy(output):
+            health = parse_health(output)
+            trusted = (health["state"] == "READY" and health["online"] and health["bound"] and
+                       health["initialized"] and not health["dirty"] and not health["pending"])
+            return ("PASS", "ready and trusted after complete batch") if trusted else ("FAIL", "soak batch left unhealthy or untrusted driver")
+
+        try:
+            while self.clock() < deadline:
+                command(f"stress_mix {self.args.soak_batch_count}")
+                command("sample", lambda output: check_sample(output, self.args.min_c, self.args.max_c,
+                        entry["extended"], entry["mode"] == "shutdown"))
+                command("health", healthy)
+                command("console", lambda output: check_console(output, self.console_baseline))
+                summary["batches"] += 1
+                summary["completed_cycles"] += self.args.soak_batch_count
+                summary["samples"] += self.args.soak_batch_count
+                current = self.clock()
+                if current >= next_progress:
+                    progress = f"Soak: elapsed={current - started:.1f} s batches={summary['batches']} cycles={summary['completed_cycles']} failures=0"
+                    print(progress, flush=True)
+                    self.session.log(("\n=== " + progress + " ===\n").encode("utf-8"))
+                    if self.session.transcript_error is not None:
+                        raise CheckError("transcript write failed: " + self.session.transcript_error)
+                    next_progress = current + self.args.soak_progress_seconds
+            if not summary["batches"]:
+                raise CheckError("soak duration expired without a complete batch")
+            summary["outcome"], summary["reason"] = "PASS", "requested duration reached with complete verified batches"
+        except (CheckError, OSError, ValueError, KeyboardInterrupt) as exc:
+            if summary["outcome"] != "FAIL":
+                summary["outcome"] = "INCONCLUSIVE"
+            if summary["reason"] == "soak has not completed":
+                summary["reason"] = str(exc) or "operator interrupted"
+            raise
+        finally:
+            summary["elapsed_seconds"] = max(0.0, self.clock() - started)
+            if summary["commands"]:
+                summary["latency_mean_seconds"] = summary["latency_total_seconds"] / summary["commands"]
+            result = self.record(Result("duration soak", "", summary["outcome"], summary["reason"], duration_s=summary["elapsed_seconds"]))
+            if self.session.transcript_error is not None and summary["outcome"] == "PASS":
+                summary["outcome"] = result.outcome = "INCONCLUSIVE"
+                summary["reason"] = result.reason = "transcript write failed: " + self.session.transcript_error
+                raise CheckError(summary["reason"])
 
     def alert(self):
         self.mutated = True
@@ -896,17 +1090,28 @@ class Runner:
             self.stop_owned_work()
             if self.original_auto is not None:
                 self.command("job auto 1")
-            if not self.mutated:
-                return
-            for command in restore_commands(self.baseline):
-                self.command(command)
-            profile = parse_settings(self.command("settings").output)
-            self.assertion("restored desired profile", profile == self.baseline, "restored profile must exactly match captured settings")
-            self.command("snapshot read")
-            self.healthy()
-            self.restoration = "verified"
+            if self.mutated:
+                for command in restore_commands(self.baseline):
+                    self.command(command)
+                profile = parse_settings(self.command("settings").output)
+                self.assertion("restored desired profile", profile == self.baseline, "restored profile must exactly match captured settings")
+                self.command("snapshot read")
+                self.healthy()
+                self.restoration = "verified"
         except (CheckError, OSError, KeyboardInterrupt) as exc:
             self.record(Result("baseline restoration", "", "FAIL", f"not verified: {exc}; captured profile is in report; manual recovery required"))
+        # Presentation restoration also applies to read-only continuous stress.
+        # Never send it after a lost response or a reset, even if config cleanup
+        # had already completed before that loss.
+        if getattr(self.session, "restarted", False) is not True and getattr(self.session, "framing_lost", False) is not True:
+            try:
+                if self.original_verbose is not None:
+                    self.command(f"verbose {int(self.original_verbose)}")
+                    self.presentation_restoration = "verified"
+                if self.console_baseline is not None:
+                    self.verify_console()
+            except (CheckError, OSError, KeyboardInterrupt) as exc:
+                self.record(Result("presentation/output cleanup", "", "FAIL", str(exc) or "operator interrupted"))
 
     def run(self):
         current_suite = None
@@ -919,6 +1124,7 @@ class Runner:
                 suite["outcome"] = "PASS"
                 current_suite = None
             self.healthy()
+            self.verify_console()
         except CheckError as exc:
             if current_suite and any(result.outcome == "FAIL" for result in self.results):
                 current_suite["outcome"] = "FAIL"
@@ -978,12 +1184,15 @@ def _write_report(path: Path, runner: Runner, evidence: EvidenceFiles) -> int:
                   hardware_run=bool(getattr(runner.session, "hardware_connected", False)), metadata=vars(runner.args), git_commit=git_value("rev-parse", "HEAD"),
                   git_dirty=None if dirty_status == "unknown" else bool(dirty_status), baseline=runner.baseline,
                   firmware=runner.firmware, firmware_verification=runner.firmware_verification,
+                  bus=runner.bus, console_baseline=runner.console_baseline, soak=runner.soak_summary,
+                  original_verbose=runner.original_verbose, presentation_restoration=runner.presentation_restoration,
                   host_source=dict(commit=git_value("rev-parse", "HEAD"), dirty=None if dirty_status == "unknown" else bool(dirty_status)),
                   restoration=runner.restoration, counts=counts, suites=runner.suites,
                   manual_gates=[dict(name=name, outcome="NOT_RUN") for name in
                                 ("calibrated thermal accuracy", "exact conversion and fault-queue timing",
                                  "shutdown hold under thermal stimulus", "interrupt ALERT acknowledgement",
-                                 "ARA arbitration", "general-call reset", "bus electrical margins", "shared-bus concurrent owner isolation")],
+                                 "ARA arbitration", "general-call reset", "bus electrical margins", "shared-bus concurrent owner isolation",
+                                 "USB host stalls and data-only disconnect")],
                   results=[asdict(result) for result in runner.results])
     evidence.write_json(report)
     print(f"{outcome}: {path}; restoration: {runner.restoration}")
@@ -1001,9 +1210,11 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", help="serial port, for example COM7 or /dev/ttyACM0")
     parser.add_argument("--baud", type=int, default=115200)
+    parser.add_argument("--dtr", type=int, choices=(0, 1), default=0, help="serial DTR state before opening; Arduino S2 native USB requires 1")
+    parser.add_argument("--rts", type=int, choices=(0, 1), default=0, help="serial RTS state before opening; normally keep 0 to avoid reset lines")
     parser.add_argument("--model", choices=("tmp102", "tmp112", "tmp112d"))
     parser.add_argument("--address", type=lambda value: int(value, 0), help="explicit package/strap address, e.g. 0x48")
-    parser.add_argument("--suite", action="append", choices=("smoke", "config", "oneshot", "stress", "alert", "disconnect", "negative", "owner", "registers"), help="repeat for ordered suites; default smoke")
+    parser.add_argument("--suite", action="append", choices=("smoke", "config", "oneshot", "stress", "alert", "disconnect", "negative", "owner", "registers", "detection"), help="repeat for ordered suites; default smoke; detection probes all eight legal addresses")
     parser.add_argument("--dry-run", action="store_true", help="show selected actions without serial or a hardware result")
     parser.add_argument("--board", default="unspecified")
     parser.add_argument("--part", default="unspecified", help="full orderable part/package and marking")
@@ -1017,6 +1228,9 @@ def parse_args(argv=None):
     parser.add_argument("--max-c", type=float, default=125.0)
     parser.add_argument("--format-tolerance-c", type=positive, default=1.0, help="maximum normal/extended/normal spread in a thermally stable fixture")
     parser.add_argument("--stress-count", type=int, default=20)
+    parser.add_argument("--soak-seconds", type=float, default=0.0, help="run quiet mixed batches after suites for this duration, 0..604800 seconds")
+    parser.add_argument("--soak-batch-count", type=int, default=20, help="complete cycles per bounded mixed soak batch, 1..1000")
+    parser.add_argument("--soak-progress-seconds", type=positive, default=60.0, help="minimum interval between aggregate soak progress messages")
     parser.add_argument("--command-timeout", type=positive, default=5.0)
     parser.add_argument("--long-timeout", type=positive, default=120.0)
     parser.add_argument("--startup-seconds", type=positive, default=3.0)
@@ -1031,9 +1245,13 @@ def parse_args(argv=None):
         parser.error("unknown is not a verifiable firmware expectation")
     if not 1 <= args.stress_count <= 100000 or args.baud <= 0:
         parser.error("stress count must be 1..100000 and baud must be positive")
+    if not math.isfinite(args.soak_seconds) or not 0 <= args.soak_seconds <= 604800:
+        parser.error("soak seconds must be finite and 0..604800")
+    if not 1 <= args.soak_batch_count <= 1000:
+        parser.error("soak batch count must be 1..1000")
     if not all(math.isfinite(value) for value in (args.min_c, args.max_c)) or args.min_c > args.max_c:
         parser.error("temperature window must be finite and ordered")
-    for name in ("command_timeout", "long_timeout", "startup_seconds", "silence_seconds", "fault_window"):
+    for name in ("command_timeout", "long_timeout", "startup_seconds", "silence_seconds", "fault_window", "soak_progress_seconds"):
         if getattr(args, name) > 86400:
             parser.error("time windows must not exceed 86400 seconds")
     if len(args.suite) > 32:
@@ -1053,12 +1271,13 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     if args.dry_run:
         print("DRY RUN: no serial connection, hardware result or firmware upload")
-        print("preflight: version/firmware identity; job; stats; job auto; settings; health; verify")
+        print("preflight: version/firmware identity; bus; console loss baseline; job; stats; job auto; settings; health; verify")
         descriptions = {
+            "detection": "opt-in address probes + CONFIG plausibility at eight legal addresses; preserve target/profile/health; exact adapter accounting",
             "smoke": "probe; settings read; snapshot read; selfcheck; read; sample; xfer_stats",
             "config": "selftest full (18 settings cases + verified firmware restoration)",
             "oneshot": "shutdown; normal/extended/normal confirmed samples + snapshots + thermal continuity; manual start/ready/tryread; blocking read",
-            "stress": f"stress {args.stress_count}; stress_mix {args.stress_count}; sample checks; stop bus-silence check",
+            "stress": f"capture verbose; quiet stress {args.stress_count}; stress_mix {args.stress_count}; sample/console checks; stop bus-silence check; restore verbose",
             "alert": "comparator threshold stimulus at both polarities/all fault queues; raw AL + optional GPIO; restores profile",
             "disconnect": "guided sensor disconnect; OFFLINE threshold; guided reconnect; health-bypassing probes; explicit recover",
             "negative": "malformed commands; expected argument errors; unchanged bus/profile/health/owner state; restore if needed",
@@ -1067,6 +1286,9 @@ def main(argv=None) -> int:
         }
         for suite in args.suite:
             print(f"{suite}: {descriptions[suite]}")
+        if args.soak_seconds:
+            print(f"soak: quiet stress_mix {args.soak_batch_count} batches for at least {args.soak_seconds:g} seconds; complete-cycle/sample/health/console checks; bounded aggregate history")
+            print("finally: stop once; restore original verbose; restore desired profile if shutdown conversions were used")
         if MUTATING.intersection(args.suite):
             print("finally: stop once; restore captured profile using recover/typed settings; verify snapshot and health")
             print("cleanup requires intact serial framing and no detected restart; otherwise retain the profile for manual recovery")
@@ -1084,8 +1306,8 @@ def main(argv=None) -> int:
         import serial
         connection = serial.Serial(port=None, baudrate=args.baud, timeout=0.05, write_timeout=args.command_timeout)
         session.serial = connection
-        connection.dtr = False
-        connection.rts = False
+        connection.dtr = bool(args.dtr)
+        connection.rts = bool(args.rts)
         connection.port = args.port
         connection.open()
         session.hardware_connected = True

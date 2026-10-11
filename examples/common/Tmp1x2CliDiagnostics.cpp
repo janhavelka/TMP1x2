@@ -99,6 +99,9 @@ void Cli::startDiagnostic(DiagnosticKind kind) {
   if ((kind == DiagnosticKind::SCAN || kind == DiagnosticKind::DISCOVER) && !_platform.probeAddress) {
     status(TMP1x2::Status::Error(TMP1x2::Err::INVALID_CONFIG, "No scan adapter.")); return;
   }
+  if (kind == DiagnosticKind::DISCOVER && !_config.i2cWriteRead) {
+    status(TMP1x2::Status::Error(TMP1x2::Err::INVALID_CONFIG, "No register-read adapter for discovery.")); return;
+  }
   if (kind == DiagnosticKind::CONFIGTEST && !_device.isInitialized()) {
     status(TMP1x2::Status::Error(TMP1x2::Err::NOT_INITIALIZED, "Initialize before the full configuration test")); return;
   }
@@ -118,8 +121,10 @@ void Cli::startDiagnostic(DiagnosticKind kind) {
     print("Selfcheck: read-only binding/configuration/threshold/temperature/GPIO checks; reads can acknowledge interrupt ALERT.\n");
   } else if (kind == DiagnosticKind::SETTINGS || kind == DiagnosticKind::SNAPSHOT) {
     print("Reading live configuration and thresholds cooperatively; no configuration writes.\n");
-  } else print("Cooperative %s started; one address per tick, stop cancels. ACK does not identify a chip.\n",
-               kind == DiagnosticKind::SCAN ? "scan" : "discovery");
+  } else if (kind == DiagnosticKind::DISCOVER) {
+    print("Cooperative discovery started; probe then CONFIG read at 0x40..0x43 and 0x48..0x4B, at most one callback per tick.\n");
+    print("Fixed-bit plausibility is not chip identity; model/address stay selected by the user. Reads can acknowledge interrupt ALERT.\n");
+  } else print("Cooperative scan started; one address probe per tick, stop cancels. ACK does not identify a chip.\n");
 }
 void Cli::diagnosticCheck(const char* label, TMP1x2::Status result, const char* skip) {
   ++_diagnostic.checked;
@@ -203,16 +208,46 @@ void Cli::cancelWork() {
 void Cli::tickDiagnostic() {
   if (_diagnostic.kind == DiagnosticKind::SCAN || _diagnostic.kind == DiagnosticKind::DISCOVER) {
     const uint8_t address = _diagnostic.nextAddress;
-    const auto st = _platform.probeAddress(address, _platform.user);
+    TMP1x2::Status st{};
+    uint16_t raw = 0;
+    if (_diagnostic.kind == DiagnosticKind::DISCOVER && _diagnostic.phase == 1) {
+      const uint8_t reg = TMP1x2::cmd::REG_CONFIG;
+      uint8_t bytes[2]{};
+      st = _config.i2cWriteRead(address, &reg, 1, bytes, sizeof(bytes), _config.i2cTimeoutMs, _config.i2cUser);
+      raw = static_cast<uint16_t>((static_cast<uint16_t>(bytes[0]) << 8U) | bytes[1]);
+    } else st = _platform.probeAddress(address, _platform.user);
+    if (st.inProgress()) st = TMP1x2::Status::Error(TMP1x2::Err::I2C_ERROR, "Diagnostic callback must return a terminal status");
+    if (_diagnostic.kind == DiagnosticKind::DISCOVER && _diagnostic.phase == 0 && st.ok()) {
+      ++_diagnostic.found;
+      _diagnostic.phase = 1;
+      return; // The qualified register read has its own callback budget/tick.
+    }
     ++_diagnostic.checked;
     if (st.ok()) {
-      ++_diagnostic.found;
-      print("  Found 0x%02X%s\n", address,
-            address >= 0x40 && address <= 0x43 ? " (TMP112D ADD0-compatible; identity unverified)" :
-            address >= 0x48 && address <= 0x4B ? " (TMP102/TMP112-compatible; identity unverified)" : "");
-    } else if (!st.is(TMP1x2::Err::I2C_NACK_ADDR) && !st.is(TMP1x2::Err::DEVICE_NOT_FOUND)) {
+      if (_diagnostic.kind == DiagnosticKind::DISCOVER) {
+        const bool candidate = TMP1x2::TMP1x2::decodeConfiguration(raw).valid;
+        if (candidate) ++_diagnostic.passed;
+        else ++_diagnostic.incompatible;
+        print("Discover address=0x%02X config=0x%04X candidate=%s code=%s detail=%ld identity=unverified\n",
+              address, static_cast<unsigned>(raw), candidate ? "yes" : "no",
+              candidate ? "OK" : "CONFIG_MISMATCH", candidate ? 0L : static_cast<long>(raw));
+      } else { ++_diagnostic.found; print("  ACK 0x%02X; identity unverified\n", address); }
+    } else if ((_diagnostic.kind == DiagnosticKind::SCAN || _diagnostic.phase == 0) &&
+               (st.is(TMP1x2::Err::I2C_NACK_ADDR) || st.is(TMP1x2::Err::DEVICE_NOT_FOUND))) {
+      ++_diagnostic.skipped;
+    } else {
       ++_diagnostic.failures; _diagnostic.lastError = st;
     }
+    if (!st.ok()) {
+      if (_diagnostic.kind == DiagnosticKind::DISCOVER)
+        print("Discover address=0x%02X config=unavailable candidate=no code=%s detail=%ld identity=unverified\n",
+              address, TMP1x2::errorName(st.code), static_cast<long>(st.detail));
+      else if (!st.is(TMP1x2::Err::I2C_NACK_ADDR) && !st.is(TMP1x2::Err::DEVICE_NOT_FOUND))
+        print("  Scan error address=0x%02X code=%s detail=%ld%s%s\n", address,
+              TMP1x2::errorName(st.code), static_cast<long>(st.detail),
+              st.msg && *st.msg ? ": " : "", st.msg ? st.msg : "");
+    }
+    _diagnostic.phase = 0;
     ++_diagnostic.nextAddress;
     if (_diagnostic.kind == DiagnosticKind::DISCOVER && _diagnostic.nextAddress == 0x44) _diagnostic.nextAddress = 0x48;
     if (_diagnostic.nextAddress > (_diagnostic.kind == DiagnosticKind::SCAN ? 0x77 : 0x4B)) finishDiagnostic();
@@ -296,7 +331,7 @@ void Cli::tickDiagnostic() {
 }
 void Cli::stop() {
   if (_watch) {
-    _run.endedMs = now();
+    _run.elapsedMs += static_cast<uint32_t>(now() - _run.lastTickMs);
     _run.healthSuccessAfter = _device.totalSuccess(); _run.healthFailureAfter = _device.totalFailures();
     if (_run.busAvailable) _run.busAfter = _platform.transferStats(_platform.user);
   }
@@ -360,6 +395,11 @@ void Cli::tickMixed(uint32_t nowMs) {
 }
 void Cli::tick() {
   const uint32_t nowMs = now();
+  if (_watch) {
+    // Accumulate between ticks so long watches survive the 32-bit clock wrap.
+    _run.elapsedMs += static_cast<uint32_t>(nowMs - _run.lastTickMs);
+    _run.lastTickMs = nowMs;
+  }
   if (_device.operationActive()) {
     // One physical transfer per loop; conversion settling uses timestamps and
     // leaves command input, cached diagnostics, and cancellation responsive.

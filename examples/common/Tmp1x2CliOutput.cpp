@@ -2,6 +2,7 @@
 #include "Tmp1x2BuildIdentity.h"  // Generated only by the native IDF example.
 #endif
 #include "Tmp1x2Cli.h"
+#include <cstring>
 
 // Shared help and cached views; rendering itself performs no bus operations.
 
@@ -25,27 +26,44 @@ void Cli::printVersion() {
 #endif
   print("Firmware: git=%s tree=%s built=%s\n", TMP1X2_GIT_COMMIT, TMP1X2_GIT_STATUS, TMP1X2_BUILD_TIMESTAMP);
 }
-void Cli::printHelp() {
+void Cli::printHelp(const char* topic) {
+  static const char* topics[] = {"common", "connection", "data", "job", "config", "alert", "registers", "diagnostics"};
+  const bool all = topic == nullptr || std::strcmp(topic, "all") == 0;
+  bool known = all;
+  for (const char* name : topics) if (topic && std::strcmp(topic, name) == 0) known = true;
+  if (!known) {
+    status(TMP1x2::Status::Error(TMP1x2::Err::INVALID_PARAM, "Unknown help topic; use help for topic names")); return;
+  }
   print("%s=== TMP1x2 CLI Help ===%s\n", color(36), color(0));
-  const auto section = [this](const char* title) { print("\n%s[%s]%s\n", color(32), title, color(0)); };
-  const auto item = [this](const char* command, const char* description) {
-    print("  %s%-32s%s - %s\n", color(36), command, color(0), description);
+  print("Topics: common connection data job config alert registers diagnostics all\n");
+  bool visible = false;
+  const auto section = [this, topic, all, &visible](const char* name, const char* title) {
+    visible = all || std::strcmp(topic, name) == 0;
+    if (visible) print("\n%s[%s]%s\n", color(32), title, color(0));
   };
-  section("Common");
-  item("help / ?", "Show this help");
+  const auto item = [this, &visible](const char* command, const char* description) {
+    if (visible) print("  %s%-32s%s - %s\n", color(36), command, color(0), description);
+  };
+  section("common", "Common");
+  item("help / ? [topic]", "All commands or one topic; cached, no I2C");
   item("version / ver", "Firmware, library and framework version");
+  item("color [0|1|off|on]", "Show or toggle ANSI colors");
+  item("verbose [0|1] / quiet [0|1]", "Show or set per-sample watch/stress output");
+  section("connection", "Connection and discovery");
   item("bus", "Cached application pins, frequency and timeout; no I2C");
-  item("scan", "Probe 0x08..0x77; bounded, diagnostic traffic");
-  item("discover", "Probe 0x40..0x43 and 0x48..0x4B; identity unverified");
+  item("console", "Cached console transport counters; no I2C");
+  item("scan", "112 address-only probes, 0x08..0x77; ACK is not identity");
+  item("discover / detect", "8 legal addresses: read CONFIG fixed bits; identity unverified");
+  item("probe", "Selected-address CONFIG plausibility; bypasses driver health");
+  item("addr [address]", "Set model-valid target address while ended");
+  item("model [tmp102|tmp112|tmp112d]", "BOM/package selection; tmp112d is ADD0 X2SON");
   item("init / begin", "Start cooperative initialization and verification");
   item("bind / unbind", "Bus-silent transport binding or full release");
   item("end", "Release driver state without changing the bus");
   item("shutdown", "Cooperatively apply low-power shutdown mode");
-  item("addr [address]", "Set model-valid target address while ended");
-  item("model [tmp102|tmp112|tmp112d]", "BOM/package selection; tmp112d is ADD0 X2SON");
-  item("color [0|1|off|on]", "Show or toggle ANSI colors");
-  item("verbose [0|1] / quiet [0|1]", "Show or set per-sample watch/stress output");
-  section("Data");
+  item("recover", "Cooperatively reapply desired configuration");
+  item("invalidate", "Bus-silent external-reset/hotplug notification; requires recovery");
+  section("data", "Data");
   item("read / temp", "Read latest register; freshness not guaranteed");
   item("tempf", "Read latest temperature in Fahrenheit");
   item("measure / request", "Start cooperative sample operation");
@@ -57,18 +75,17 @@ void Cli::printHelp() {
   item("freshness [max_age_ms]", "Cached acquisition age and conversion provenance");
   item("watch [N] [interval_ms]", "Finite sampling, default 20 at 1000 ms");
   item("stop", "Stop sampling or cancel an operation; no I2C");
+  item("stats [reset]", "Cached run summary or idle summary reset; no I2C");
+  item("timing", "Conversion timing, resolution and register ranges");
+  item("convert <raw16>", "Decode a TEMP register word without I2C");
+  section("job", "Cooperative jobs");
   item("job / job status", "Cached cooperative operation progress; no I2C");
   item("job auto [0|1]", "Show/set automatic owner polling; default 1");
   item("job step [0..255]", "Poll owner job once, bounded callbacks; default 1");
   item("job start <kind> [timeout_ms]", "init|recover|shutdown|read; 1..2147483647 ms, default 1000");
   item("result / job result", "Retained terminal operation result; no I2C");
   item("cancel / job cancel", "Cancel active operation without I2C");
-  item("stats [reset]", "Cached run summary or idle summary reset; no I2C");
-  item("timing", "Conversion timing, resolution and register ranges");
-  item("convert <raw16>", "Decode a TEMP register word without I2C");
-  item("thcalc <C> [normal|extended]", "Encode/decode a rounded threshold without I2C");
-  item("thdecode <raw16> [format]", "Decode a threshold in normal or extended format");
-  section("Configuration");
+  section("config", "Configuration");
   item("cfg / settings / snapshot", "Desired settings cached by CLI; no I2C");
   item("settings read / settings live", "Cooperative live configuration/threshold checks");
   item("settings values", "Show accepted configuration field values");
@@ -76,13 +93,17 @@ void Cli::printHelp() {
   item("mode [cont|shutdown]", "Continuous conversion or low-power shutdown");
   item("rate [0.25|1|4|8]", "Conversion rate in Hz");
   item("extended [0|1|off|on]", "Select normal 12-bit or extended 13-bit format");
+  item("verify", "Compare hardware configuration with driver cache");
+  section("alert", "ALERT and thresholds");
   item("threshold [low_C high_C]", "Read or set temperature thresholds");
+  item("thcalc <C> [normal|extended]", "Encode/decode a rounded threshold without I2C");
+  item("thdecode <raw16> [format]", "Decode a threshold in normal or extended format");
   item("alert [comparator|interrupt]", "Thermostat operating mode");
   item("polarity [low|high]", "ALERT output polarity");
   item("faults [1|2|4|6]", "Consecutive faults before ALERT");
   item("alertpin / intpin", "Sample opt-in physical ALERT GPIO; no I2C");
-  item("verify", "Compare hardware configuration with driver cache");
-  section("Registers");
+  item("ara / alertresponse", "Acknowledge one SMBus ALERT response winner");
+  section("registers", "Registers");
   item("config / status", "Read and decode live configuration register");
   item("status_raw / raw", "Tracked raw CONFIG / TEMP register word");
   item("dump", "Read all four registers; can clear interrupt ALERT");
@@ -91,14 +112,10 @@ void Cli::printHelp() {
   item("rawread <0..3>", "Bound-only register read; bypasses driver health");
   item("rawwrite <1..3> <raw16>", "Bound-only write; bypasses health, marks dirty");
   item("rawdump", "Bound-only read of all registers; bypasses health");
-  section("Diagnostics");
+  section("diagnostics", "Diagnostics");
   item("drv / health / state / online", "Cached driver health and independent bus counters");
   item("diag", "Version, desired settings and cached health");
-  item("probe", "Read device configuration without driver health effects");
-  item("recover", "Cooperatively reapply desired configuration");
-  item("invalidate", "Bus-silent external-reset/hotplug notification; requires recovery");
   item("busreset / reset all", "General-call RESET of ALL compatible bus devices");
-  item("ara / alertresponse", "Acknowledge one SMBus ALERT response winner");
   item("stress [N]", "Finite cooperative samples, default 100; stop cancels");
   item("stress_mix [N]", "Finite probe/config/threshold/sample cycles; default 100");
   item("selfcheck / selftest", "Cooperative read-only PASS/FAIL/SKIP chip checks");
@@ -108,6 +125,7 @@ void Cli::printHelp() {
   item("xfer_reset", "Reset adapter counters while idle; preserves health");
   item("healthreset", "Clear cumulative health totals while idle; retain state/error");
   print("\nRegister reads and ARA can acknowledge interrupt ALERT. No automatic bus reset.\n");
+  print("Discovery only checks CONFIG plausibility; it cannot identify TMP102/TMP112 or select a package.\n");
   print("Full-test stop/cancel starts baseline restoration; a second cancellation aborts restoration.\n");
   print("job auto controls owner jobs; explicit watch/diagnostics keep their own scheduling. Manual jobs need a suitable deadline.\n");
 }
@@ -152,12 +170,12 @@ void Cli::printTransferStats() {
 }
 void Cli::printRunStats() {
   if (!_run.available) { print("No watch/stress run statistics.\n"); return; }
-  const uint32_t elapsed = (_watch ? now() : _run.endedMs) - _run.startedMs;
-  print("Run: %s target=%lu completed=%lu ok=%lu fail=%lu elapsed=%lu ms remaining=%lu\n",
+  const uint64_t elapsed = _run.elapsedMs + (_watch ? static_cast<uint32_t>(now() - _run.lastTickMs) : 0U);
+  print("Run: %s target=%lu completed=%lu ok=%lu fail=%lu elapsed=%llu ms remaining=%lu\n",
         _watch ? "active" : "stopped", static_cast<unsigned long>(_run.target),
         static_cast<unsigned long>(_run.mixed ? _run.completedCycles : _run.successes + _run.failures),
         static_cast<unsigned long>(_run.successes), static_cast<unsigned long>(_run.failures),
-        static_cast<unsigned long>(elapsed), static_cast<unsigned long>(_remaining));
+        static_cast<unsigned long long>(elapsed), static_cast<unsigned long>(_remaining));
   if (_run.mixed)
     print("Mixed checks: completed=%lu samples=%lu (four checks per complete cycle; shutdown sampling may trigger OS)\n",
           static_cast<unsigned long>(_run.successes + _run.failures), static_cast<unsigned long>(_run.samples));
@@ -231,7 +249,20 @@ void Cli::printDiagnosticResult() {
   const auto& diagnostic = _lastDiagnostic;
   if (!diagnostic.available) { print("No diagnostic result.\n"); return; }
   printDiagnostic(true);
-  if (diagnostic.kind == DiagnosticKind::SCAN || diagnostic.kind == DiagnosticKind::DISCOVER) {
+  if (diagnostic.kind == DiagnosticKind::DISCOVER) {
+    print("Discovery %s: checked=%lu ack=%lu readable=%lu candidates=%lu incompatible=%lu absent=%lu errors=%lu identity=unverified\n",
+          diagnostic.cancelled ? "cancelled" : "complete", static_cast<unsigned long>(diagnostic.checked),
+          static_cast<unsigned long>(diagnostic.found), static_cast<unsigned long>(diagnostic.passed + diagnostic.incompatible),
+          static_cast<unsigned long>(diagnostic.passed),
+          static_cast<unsigned long>(diagnostic.incompatible), static_cast<unsigned long>(diagnostic.skipped),
+          static_cast<unsigned long>(diagnostic.failures));
+    if (diagnostic.cancelled) status(TMP1x2::Status::Error(TMP1x2::Err::CANCELLED, "Discovery cancelled"));
+    else if (diagnostic.failures) status(diagnostic.lastError);
+    else if (diagnostic.passed == 0) status(TMP1x2::Status::Error(TMP1x2::Err::DEVICE_NOT_FOUND, "No plausible TMP1x2 register map found"));
+    else status(TMP1x2::Status::Ok());
+    return;
+  }
+  if (diagnostic.kind == DiagnosticKind::SCAN) {
     print("Scan %s: %lu probed, %lu ACK, %lu other transport errors.\n",
           diagnostic.cancelled ? "cancelled" : diagnostic.active ? "active" : "complete",
           static_cast<unsigned long>(diagnostic.checked), static_cast<unsigned long>(diagnostic.found),

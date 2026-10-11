@@ -4,6 +4,7 @@
 #include <cstdarg>
 #include <cstddef>
 #include <cstdint>
+#include "ConsoleBuffer.h"
 #include "TMP1x2/TMP1x2.h"
 #include "TMP1x2/BusOperations.h"
 
@@ -25,6 +26,7 @@ struct Platform {
   TMP1x2::Status (*probeAddress)(uint8_t, void*) = nullptr;
   TransferStats (*transferStats)(void*) = nullptr;
   void (*resetTransferStats)(void*) = nullptr;
+  ConsoleStats (*consoleStats)(void*) = nullptr;
   TMP1x2::I2cWriteFn busWrite = nullptr;
   TMP1x2::BusOperations::ReceiveFn busReceive = nullptr;
   void* user = nullptr;
@@ -44,7 +46,7 @@ class Cli {
   void feed(char value);
   void processCommand(const char* text);
   void tick();
-  void printHelp();
+  void printHelp(const char* topic = nullptr);
   void printPrompt();
  private:
   void print(const char* format, ...);
@@ -103,6 +105,7 @@ class Cli {
     uint8_t nextAddress = 0;
     uint32_t checked = 0;
     uint32_t found = 0;
+    uint32_t incompatible = 0;
     uint32_t failures = 0;
     uint32_t passed = 0;
     uint32_t skipped = 0;
@@ -134,8 +137,8 @@ class Cli {
     uint32_t failures = 0;
     uint32_t samples = 0;
     uint32_t completedCycles = 0;
-    uint32_t startedMs = 0;
-    uint32_t endedMs = 0;
+    uint64_t elapsedMs = 0;
+    uint32_t lastTickMs = 0;
     uint32_t healthSuccessBefore = 0;
     uint32_t healthFailureBefore = 0;
     uint32_t healthSuccessAfter = 0;

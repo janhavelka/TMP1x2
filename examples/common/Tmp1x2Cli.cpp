@@ -121,12 +121,27 @@ void Cli::processCommand(const char* text) {
   if (!count) return;
   const char* command = args[0];
   const auto invalid = [this]() { status(TMP1x2::Status::Error(TMP1x2::Err::INVALID_PARAM, "invalid command/arguments; see help")); };
-  if ((equals(command, "help") || equals(command, "?")) && count == 1) { printHelp(); return; }
+  if (equals(command, "help") || equals(command, "?")) {
+    if (count > 2) { invalid(); return; }
+    printHelp(count == 2 ? args[1] : nullptr); return;
+  }
   if ((equals(command, "version") || equals(command, "ver")) && count == 1) { printVersion(); return; }
   if (equals(command, "bus") && count == 1) {
     print("Bus settings: SDA=%d SCL=%d frequency=%lu Hz timeout=%lu ms (cached application settings; -1/0 means unspecified)\n",
           _platform.sdaPin, _platform.sclPin, static_cast<unsigned long>(_platform.i2cFrequencyHz),
           static_cast<unsigned long>(_config.i2cTimeoutMs)); return;
+  }
+  if (equals(command, "console") && count == 1) {
+    if (!_platform.consoleStats) {
+      status(TMP1x2::Status::Error(TMP1x2::Err::INVALID_CONFIG, "No console statistics adapter.")); return;
+    }
+    const auto stats = _platform.consoleStats(_platform.user);
+    print("Console: queued=%lu sent=%lu dropped=%lu truncated=%lu\n",
+          static_cast<unsigned long>(stats.queuedBytes), static_cast<unsigned long>(stats.sentBytes),
+          static_cast<unsigned long>(stats.droppedBytes), static_cast<unsigned long>(stats.truncatedMessages));
+    print("Console transport: %s\n", stats.backend ? stats.backend : "unspecified");
+    print("Cached output queue counters; sent means accepted by the transport, not verified host receipt.\n");
+    return;
   }
   if (equals(command, "color")) {
     bool value = _color;
@@ -243,7 +258,7 @@ void Cli::processCommand(const char* text) {
     else status(st);
     return;
   }
-  if ((equals(command, "scan") || equals(command, "discover")) && count == 1) {
+  if ((equals(command, "scan") || equals(command, "discover") || equals(command, "detect")) && count == 1) {
     startDiagnostic(equals(command, "scan") ? DiagnosticKind::SCAN : DiagnosticKind::DISCOVER); return;
   }
   if (equals(command, "stop") && count == 1) { cancelWork(); return; }
@@ -404,7 +419,7 @@ void Cli::processCommand(const char* text) {
     if (!_platform.nowMs || !_config.nowMs) {
       status(TMP1x2::Status::Error(TMP1x2::Err::INVALID_CONFIG, "watch requires platform and driver nowMs callbacks")); return;
     }
-    _run = RunStats{}; _run.available = true; _run.mixed = mixed; _run.target = amount; _run.startedMs = now();
+    _run = RunStats{}; _run.available = true; _run.mixed = mixed; _run.target = amount; _run.lastTickMs = now();
     _mixedPhase = 0;
     _run.healthSuccessBefore = _device.totalSuccess(); _run.healthFailureBefore = _device.totalFailures();
     _run.busAvailable = _platform.transferStats != nullptr;

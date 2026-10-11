@@ -9,6 +9,39 @@ Those protocols are outside this comparison. No additional standalone I2C
 library was found. The earlier [audit findings](audit-2026-09-26.md) remain
 historical evidence.
 
+## Detection, help and long-run follow-up
+
+The follow-up starts from TMP1x2 `d957305`. All sixteen local repository states
+were checked again. 24Cxx has advanced to `b6ddbc9`, adding a shared diagnostic
+CLI and evidence-checked serial runner. TCA9548A remains at `07acf36` with
+concurrent uncommitted CLI/build changes; that worktree was observed read-only.
+The other fourteen revisions below are unchanged and clean. The earlier clean
+worktree inventory remains a record of the preceding audit.
+
+| Area | Strongest applicable examples inspected | TMP1x2 change |
+| --- | --- | --- |
+| Protocol-qualified detection | LDC1614 `examples/common/Ldc1614Cli.cpp`, INA228 and INA3221 `examples/01_basic_bringup_cli/main.cpp`; OPT4001 can use an identity register that TMP lacks | Cooperative address probe followed by CONFIG fixed-bit validation, with raw evidence, separate absence/incompatibility/errors and no automatic model/address selection |
+| Discovery limits | SHT3x shared CLI and 24Cxx `examples/common/Eeprom24CxxCli.cpp` explicitly separate ACK from identity/geometry | Both broad scan and chip-address discovery report identity as unverified; TMP102/TMP112 cannot be distinguished by their four-register map |
+| Navigable help | LDC1614 grouped help and targeted help; INA228/INA3221 aligned colored sections | Preserve the common colors and command column, add topic filtering and separate connection, owner, ALERT and register workflows |
+| Sustained testing | LDC1614 duration/completion checks; LSM6DS3TR `examples/02_owner_soak/main.cpp` bounded progress; INA228 host soak aggregation | Host-controlled duration soak in finite cooperative batches, quiet sample output, bounded retained summaries, exact sample/transport/health checks and immediate failure reporting |
+| USB and serial behavior | Peer PlatformIO settings plus the installed, pinned Arduino and ESP-IDF implementations | Explicit native USB input/output routes, bounded example output queue, loss counters, backend-specific DTR handling and reconnect/stall bench procedures |
+
+SHT3x's low-output soak demonstrates useful compact reporting, but its blocking
+loop is unsuitable for TMP's cooperative command service. INA228's configurable
+row downsampling and INA3221's latency lists can still grow with duration. TMP
+uses aggregate latency/count statistics and streamed transcripts with bounded
+in-memory evidence. Long-run failures remain visible; the soak loop does not
+recover automatically and resume as if the failed batch had passed.
+
+SDK behavior matters as well as peer configuration: native IDF's previous
+defaults selected UART input, and Arduino S2 TinyUSB requires DTR for output.
+The common peer `monitor_dtr=0` setting does not establish S2 CDC readiness.
+Console counters describe software buffering and transport acceptance; physical
+host delivery and USB disconnect behavior still require the instrumented bench
+checks in [hardware validation](hardware-validation.md).
+
+## Inventory
+
 | Library | Device / protocol | Relevance to TMP102/TMP112 |
 | --- | --- | --- |
 | OPT4001 | TI light sensor; 16-bit pointer registers, thresholds, one-shot/continuous, ALERT | Closest overall example/API/CLI template |
@@ -125,7 +158,7 @@ OPT4001 supplies the repository shape and terminal presentation. ADS1115 supplie
 - `I2cWriteFn = Status (*)(uint8_t, const uint8_t*, size_t, uint32_t timeoutMs, void*)`; `I2cWriteReadFn` adds TX/RX buffers and lengths and performs one atomic repeated-start transfer. Caller owns locking, bus lifecycle, pins, clock frequency, timeout enforcement, scheduling and recovery. Preserve meaningful transport errors; do not invent NACK phase information.
 - Bus-silent binding, admission, cancellation and end; one owner operation per instance with caller-driven polls. Initialization, configuration, recovery, shutdown and read jobs have transfer budgets, deadlines and retained results. Synchronous conveniences share the same configuration state machine. See [owner operations](owner-operations.md) and [integration](integration.md). No automatic general-call reset or hidden retry.
 - Four health states: `UNINIT`, `READY`, `DEGRADED`, `OFFLINE`; saturating success/failure counters, consecutive failures, last success/error times and last error. Configuration trust is separate from transport health. Diagnostic probes do not alter tracked driver health. Bus-adapter counters include diagnostic traffic and therefore differ from driver counters.
-- TMP1x2 adopts the OPT4001 help style: cyan `=== TMP1x2 CLI Help ===`, green `[Common]`, `[Data]`, `[Configuration]`, `[Registers]`, `[Diagnostics]` sections; cyan left-aligned command column width 32; plain descriptions; prompt `> `. ANSI reset `ESC[0m`, red 31, green 32, yellow 33, cyan 36 and gray 90. `color [0|1|off|on]` disables styling. Health is green for READY, yellow for degraded/uninitialized, red for offline/errors.
+- TMP1x2 adopts the OPT4001 help style: cyan `=== TMP1x2 CLI Help ===`, green group headings; cyan left-aligned command column width 32; plain descriptions; prompt `> `. Topic filtering follows the LDC1614 pattern, with common, connection, data, owner job, configuration, ALERT, register and diagnostic groups. ANSI reset `ESC[0m`, red 31, green 32, yellow 33, cyan 36 and gray 90. `color [0|1|off|on]` disables styling. Health is green for READY, yellow for degraded/uninitialized, red for offline/errors.
 - Common CLI aliases include `help/?`, `version/ver`, `init/begin`, `drv/health`, `cfg/settings`, `reg/rreg`, plus scan, probe, recover, end, cached sample, finite watch/stress, stop and raw register diagnostics. Job/result/cancel commands expose cooperative progress; quiet mode, run statistics, counter reset and optional ALERT GPIO mirror peer diagnostics. Chip-specific commands follow actual TMP capabilities; no fictitious chip ID or CRC command.
 - Native IDF examples use `app_main`, `driver/i2c_master.h`, `esp_timer` and task timing; no Arduino compatibility layer. Both adapters exercise the same command processor.
 - Sibling build conventions: `library.json` as version source, generated version header and component manifest, C++17 CMake component, PlatformIO S2/S3 Arduino environments and native tests, Windows `scripts/pio.cmd`, explicit framework-free compilation, CLI-contract checks. Hardware validation is a separate claim from builds and simulated transport tests.

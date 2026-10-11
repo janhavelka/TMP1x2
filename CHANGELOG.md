@@ -4,6 +4,10 @@
 
 ### Changed
 
+- Qualify eight-address discovery with CONFIG fixed bits and explicit candidate,
+  absent, incompatible and transport-error counts; preserve selection and health.
+- Select native USB console defaults per IDF target and assert S2 monitor DTR;
+  remove the unverified S3 PSRAM flag and retain explicit UART console support.
 - Audit CLI and test procedures against sixteen sibling I2C libraries; document
   concrete thermal, ALERT, ARA, reset, shutdown-hold and shared-owner bench tests.
 - Share configuration normalization and CONFIG-word checks across synchronous,
@@ -18,6 +22,9 @@
 
 ### Fixed
 
+- Bound example console output service during host stalls, retain partial writes,
+  expose output loss and backend identity, and avoid blocking USB TX waits.
+- Accumulate watch elapsed time across 32-bit clock wrap for long-running tests.
 - Fail CLI snapshot/settings/self-check diagnostics when successful reads expose
   configuration drift or untrusted temperature, rather than reporting PASS.
 - Require snapshot trust and actual transfer accounting in HIL results; reject
@@ -51,6 +58,10 @@
 
 ### Added
 
+- Shared CLI help topics, `detect` alias and cached `console` statistics.
+- Explicit HIL detection and quiet duration soaks with bounded aggregate history,
+  complete-batch checks, console-loss rejection and DTR/RTS selection.
+- Console queue regressions and physical USB stall/disconnect test procedures.
 - Shared CLI manual owner polling, operation deadlines, zero/one/multiple-transfer
   assertions, explicit device-state invalidation and cached bus context.
 - Stable firmware identity output and native ESP-IDF example build metadata,

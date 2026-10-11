@@ -94,7 +94,11 @@ with baseline restoration, raw diagnostics and shared-bus maintenance. Details
 and physical side effects are listed in [the example guide](../examples/README.md).
 Manual `job auto` / `job step` service and explicit operation deadlines expose
 zero/one/many-transfer budgets, cancellation and timeout behavior at the console.
-Cached bus context and `xfer_assert` support exact traffic checks. `invalidate`
+Topic help uses `help connection|data|job|config|alert|registers|diagnostics` or
+`help common`; unqualified `help` retains the full grouped view. `discover` / `detect`
+checks CONFIG fixed bits after each address ACK and reports candidates separately
+from absence, incompatible responses and transport errors. It cannot identify a
+specific chip. Cached bus context and `xfer_assert` support exact traffic checks. `invalidate`
 exercises external-change recovery without sending a shared-bus reset. Live
 diagnostics report a failure when observations disagree with the desired profile
 or the temperature is untrusted, even when all I2C transfers succeeded.
@@ -103,7 +107,12 @@ is still required for electrical timing, ALERT thresholds and sensor accuracy.
 
 The [serial HIL runner](hil-runner.md) automates configuration/readback, format
 transitions, one-shots, finite stress, comparator AL/optional GPIO response and
-guided disconnect/recovery. It records selected checks and omissions explicitly.
+guided disconnect/recovery. Opt-in detection checks address evidence and unchanged
+driver state. Duration soaks use quiet finite mixed batches with complete-cycle,
+temperature, health and console-loss checks. Firmware output and host summaries
+have bounded memory use. `console` exposes dropped output and the actual backend;
+backend acceptance does not establish host receipt. The runner records selected
+checks and omissions explicitly.
 Additional suites check rejected-command invariants, manual owner operations,
 raw/tracked registers and verified recovery. Firmware identity is recorded
 separately from the runner checkout and can be checked before mutating tests.

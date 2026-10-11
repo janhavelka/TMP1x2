@@ -1,5 +1,37 @@
 # Validation results
 
+## 2026-10-11 detection, soak and USB follow-up
+
+The [renewed comparison](library-comparison.md) checks all sixteen sibling
+repository states and records the patterns used for detection, help, sustained
+testing and USB. The shared CLI now qualifies discovered addresses without
+claiming chip identity; the runner verifies those results and supports quiet
+duration soaks. Both framework adapters use bounded output queues with explicit
+loss reporting. Physical validation remains pending.
+
+| Check | Result |
+| --- | --- |
+| Strict C++17 CMake build | Passed with `-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Werror` |
+| Complete CTest suite | All 12 entries passed, including the new bounded-console tests |
+| PlatformIO native | All 21 core test groups passed; console tests remain in CTest |
+| HIL runner regressions | All 61 tests passed, including seven compiled CLI fixture workflows; detection totals and fixed bits, fragmented completion, quiet soak/restoration, 12,000 fake-clock batches with bounded results, console loss and evidence-write failures |
+| Arduino ESP32-S3 / ESP32-S2 | Both full firmware links and binary generation passed with Arduino 3.3.11 / pioarduino 55.03.311 |
+| Native ESP-IDF USB ESP32-S3 / ESP32-S2 | Both full firmware links and binary generation passed with ESP-IDF 5.5.5; fresh SDK configurations select USB Serial/JTAG on S3, ROM CDC on S2 and a 1000 Hz tick |
+| Native ESP-IDF UART ESP32-S3 / ESP32-S2 | Both full firmware links and binary generation passed with explicit UART selections in separate SDK configurations and a separate build directory |
+| Release metadata and framework boundaries | Passed; generated public version files unchanged |
+| Release archive | 50 files; bounded console and target-specific defaults included; isolated renamed CMake consumer compiled, linked and ran |
+| Doxygen | 109 HTML pages; public API, guide links and assets passed |
+| Physical hardware, USB stalls and duration soak | NOT_RUN |
+
+Local checks used Windows, GCC 15.1.0 and Python 3.12.10. Logs are under
+`build-usb-soak/`: CTest's `Testing/Temporary/LastTest.log`, `arduino.log`,
+`native-usb.log`, `native-uart.log`, `pio-native.log` and `package.log`. Fresh USB SDK configurations and the local
+PlatformIO override used to select them are under `build-usb/`. A separate build
+using the default project path also followed the new USB defaults when the SDK
+regenerated its cached default values; see `native-defaults.log`. The ten-suite plus eight-hour-soak dry run
+opened no port and generated no hardware evidence. Host tests of clock wrap and
+12,000 batches do not establish elapsed-time reliability on a powered board.
+
 ## 2026-10-11 CLI and sibling-test audit
 
 The [comparison](library-comparison.md) records sixteen inspected sibling

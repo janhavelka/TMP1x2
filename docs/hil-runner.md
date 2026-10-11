@@ -30,8 +30,9 @@ as hardware validation. No physical TMP1x2 run is claimed by this change.
    another peripheral at that address. See [examples](../examples/README.md).
 4. Build using `scripts\pio.cmd run -e esp32s3dev` or `esp32s2dev` on Windows,
    or the documented native ESP-IDF example build. Flash using your usual board
-   procedure. The runner does not build, flash, scan, change address or send a
-   general-call reset. Close other serial monitors before opening the port.
+   procedure. The runner does not build, flash, change address or send a
+   general-call reset. Only the explicit `detection` suite probes other legal
+   sensor addresses. Close other serial monitors before opening the port.
 5. Let the board reach a stable temperature. Use a reference thermometer when
    evaluating accuracy. For the `oneshot` suite, the normal/extended/normal
    samples must remain within `--format-tolerance-c` (default 1 C); keep the
@@ -42,7 +43,7 @@ as hardware validation. No physical TMP1x2 run is claimed by this change.
 6. Complete initialization and leave the CLI idle with trusted configuration and
    no pending manual one-shot. Preflight rejects existing work. Avoid running any
    other owner or CLI client concurrently. Opening a serial port can reset some
-   boards despite the runner setting DTR/RTS inactive before opening; the captured
+   boards despite the runner setting DTR/RTS inactive by default; the captured
    baseline is the profile observed **after** connection and startup.
    `job auto` must report `on`; the `owner` suite temporarily changes it and cleanup
    restores automatic polling before starting asynchronous profile restoration.
@@ -56,9 +57,23 @@ python tools/hil_tmp1x2_runner.py --dry-run --suite smoke --suite config --suite
 python tools/hil_tmp1x2_runner.py --port COM7 --model tmp102 --address 0x48 --board "PCB rev A / ESP32-S3" --part "exact BOM ordering code" --operator "Honza" --notes "3.3 V, pull-ups 4.7k, 400 kHz, reference thermometer ID" --min-c 15 --max-c 35 --suite smoke --suite config --suite oneshot --suite stress --stress-count 100
 ```
 
-For the full set of checks that need no external stimulus, select `smoke`,
+For Arduino ESP32-S2 using native USB CDC, add `--dtr 1 --rts 0`: its USB
+transport requires asserted DTR before it can transmit. The defaults
+`--dtr 0 --rts 0` suit the ESP32-S3 USB Serial/JTAG console and avoid deliberately
+asserting reset/boot signals on UART bridges. Select the options for the actual
+console route, not only the processor. Both lines are configured before opening
+the port and are not toggled during the run. Keep RTS inactive on the S2 native
+console; changing it can reset the target. The report records both options.
+
+For the checks on the selected target that need no external stimulus, select `smoke`,
 `negative`, `registers`, `owner`, `config`, `oneshot` and `stress` explicitly.
 They still modify the chip configuration; the default remains `smoke`.
+Add `--suite detection` to check all eight legal sensor addresses when CONFIG
+reads at other responding devices are acceptable. It validates CONFIG fixed bits,
+every address outcome, totals and physical transfer counts, while requiring the
+selected profile and passive driver health to stay unchanged. CONFIG reads can
+acknowledge interrupt ALERT. This establishes plausible candidates, never chip
+identity, and it does not select a discovered device automatically.
 
 `version` reports the flashed firmware's `Firmware: git=... tree=... built=...`
 identity separately from the host checkout. The runner retains both identities.
@@ -86,9 +101,10 @@ the GPIO callback enabled and the trace actually reaches the package's ALERT pin
 | Suite | Checks | Device effects |
 | --- | --- | --- |
 | `smoke` (default) | Firmware version, target/BOM selection, configuration/threshold verification, coherent snapshot, nine selfchecks, raw/count/Celsius consistency, acquisition clock and temperature window | Reads only after example startup; reads can acknowledge interrupt ALERT |
+| `detection` | All eight legal addresses, per-address CONFIG plausibility, complete totals, selected target present, exact adapter counts and unchanged passive health/profile | Address probes and CONFIG reads at every ACK; reads can acknowledge another device's interrupt ALERT; no automatic binding |
 | `config` | All 18 firmware configuration cases plus verified restoration; compare every captured desired setting after the test | Changes all configurable fields, including thermostat mode, polarity, thresholds and EM; can toggle ALERT |
 | `oneshot` | Cooperative shutdown conversions in normal/extended/normal format, temperature continuity, manual `start`/`ready`/`tryread`, and `readblocking`; confirmed provenance and snapshots | Changes mode, thresholds and EM; triggers conversions; restores original profile in cleanup |
-| `stress` | Finite sample and mixed probe/config/threshold/sample runs, exact completed/sample counts, no transport failures during each run, stable adapter counters after stop | Shutdown sampling triggers one-shots; finite continuous reads can repeat a conversion |
+| `stress` | Quiet finite sample and mixed probe/config/threshold/sample runs, exact completed/sample counts, no transport failures or new console loss, stable adapter counters after stop | Shutdown sampling triggers one-shots; finite continuous reads can repeat a conversion; original verbose setting is restored |
 | `negative` | Reject malformed register, configuration, numeric and job inputs; verify unchanged settings, cached owner state, passive health and physical transfer counters | Inputs must cause no I2C; cleanup is prepared before sending them in case a faulty parser accepts a write |
 | `registers` | All four raw/tracked registers, signed/extended pure conversions, exact raw-vs-tracked accounting, trust invalidation after a same-value raw threshold write, recovery | Rewrites the current low threshold, invalidates trust and explicitly recovers; restores entry profile at session cleanup |
 | `owner` | Zero/one/two transfer budgets, cancellation before and after the first write, retained dirty/effect evidence, 1 ms deadline expiry without I2C, bus-silent invalidation and recovery | Temporarily disables automatic polling; starts/cancels shutdown and read jobs; invalidates and recovers configuration |
@@ -116,6 +132,43 @@ incomplete serial response remains INCONCLUSIVE even if its partial text contain
 an expected I2C failure. A second active peripheral and a logic analyzer are
 needed to establish shared-bus isolation and callback timing physically.
 
+## Duration soak
+
+Append a soak after the selected suites with `--soak-seconds`. For example,
+this runs smoke checks followed by at least eight hours of mixed testing:
+
+```powershell
+python tools/hil_tmp1x2_runner.py --port COM7 --model tmp102 --address 0x48 --suite smoke --soak-seconds 28800 --soak-batch-count 20 --min-c 15 --max-c 35
+```
+
+The maximum duration is seven days (`604800` seconds). Each batch uses the
+existing finite `stress_mix` command, with 20 cycles by default and a configurable
+range of 1..1000. Every cycle probes the target and checks CONFIG, thresholds and
+temperature. The runner verifies the completed cycle/sample counts, exact
+raw-versus-tracked transfer accounting and absence of transport failures. After
+each batch it checks the cached sample, trusted READY health and console loss
+counters. A batch counts as completed only after all these checks pass. Continuous
+sampling may read the same conversion more than once; shutdown sampling must
+report confirmed one-shot provenance.
+
+Duration uses the host monotonic clock and starts after quiet-mode setup. The
+runner completes the current batch and its checks before stopping, so duration
+can exceed the request by one batch plus those checks. `--long-timeout` bounds
+each finite batch, not the whole soak. Allow for the nominal 100 ms gap per mixed
+cycle plus transfers and any conversion waits when increasing batch size.
+Progress prints at most once per `--soak-progress-seconds` (default 60), after a
+complete batch. The first failure stops the soak; there is no retry or automatic
+recovery inside the duration loop. Normal session cleanup still applies.
+
+The JSON holds aggregate batch/cycle/sample counts, command outcomes and
+minimum/mean/maximum command latency, with only a terminal result and any failed
+command retained as ordinary checks. These latencies include serial transfer and
+CLI work; they do not measure sensor conversion timing. Successful batches do not
+consume the 10,000-check limit or grow retained results indefinitely. The raw
+transcript streams to disk throughout the soak, so disk use still grows with
+duration. An interrupted or incomplete duration is INCONCLUSIVE unless a check
+observed a failure. A complete duration with zero verified batches cannot pass.
+
 ## Completion, cleanup and evidence
 
 The runner waits for a terminal operation with its matching token, the complete
@@ -130,11 +183,23 @@ Finite stress must account for actual transfers: mixed cycles include one
 health-bypassing probe each, while sample-only runs use tracked transfers only.
 Zero work or inconsistent counters cannot pass on the strength of a summary.
 
+Preflight records cached `bus` settings and `console` counters. Historical dropped
+or truncated console output is retained as the baseline. Neither counter may
+increase during testing; a saturated loss counter cannot establish intact output
+and is INCONCLUSIVE. Stress and soak check these counters after every batch, and
+the runner checks them again at the end. An unsolicited `CONSOLE_OUTPUT_LOST`
+error fails the affected command. Firmware without these metrics must be rebuilt.
+
+Stress and soak capture `verbose`, select `verbose 0` to suppress per-sample
+output, then restore the entry value during cleanup. This also applies to
+continuous read-only runs. Quiet mode keeps large finite runs within the response
+limit; their terminal summaries still contain all run and transfer counters.
+
 Startup capture and each command response are limited to 8 MiB. Reaching this
 limit stops that check as INCONCLUSIVE. The runner
 accepts at most 32 suite selections and stops after 10,000 recorded checks, with
-room reserved for cleanup. Each configurable time window is at most 86,400
-seconds. Disconnect polling and retained one-shot polling use the time remaining
+room reserved for cleanup. Ordinary configurable time windows are at most 86,400
+seconds; the aggregate soak duration allows 604,800 seconds. Disconnect polling and retained one-shot polling use the time remaining
 in their outer window as the command deadline.
 
 Mutating suites save the original desired profile. In `finally`, cleanup sends
@@ -171,6 +236,8 @@ serial session, finish or cancel any outstanding work, and recover the saved
 profile explicitly. Read-only runs become INCONCLUSIVE; runs that may have
 changed settings fail required restoration. A complete, framed command that
 reports a semantic error still permits normal cleanup.
+If quiet mode had been selected, its original value is also retained for manual
+restoration when framing loss or a restart prevents further commands.
 
 Each run creates a timestamped `.json` report and adjacent `.txt` transcript under
 `hil_logs/` (ignored by git), or a new path selected by `--report`. Both paths are
@@ -179,8 +246,9 @@ A `.json.lock` file prevents two runner processes from claiming the same report.
 After an interrupted process, keep the partial evidence and choose a new report
 path. The JSON includes source commit/dirty status, firmware
 version response, board/part/operator notes, selected suite outcomes, captured
-profile, parsed firmware identity and requested-identity comparison, every
-command's response/duration/outcome, restoration status and manual
+profile, parsed firmware identity and requested-identity comparison, bus settings,
+console loss baseline, ordinary command responses/durations/outcomes, aggregate
+soak results, configuration and verbose restoration status, and manual
 gates left `NOT_RUN`. The raw transcript is written during the run and retains
 ANSI bytes and startup output. An initial INCONCLUSIVE report remains if the
 process stops before finalization; its `hardware_run` is `null` because an
@@ -224,8 +292,10 @@ python tools/test_hil_tmp1x2_runner.py --cli-fixture build/tmp1x2_cli_tests.exe
 ```
 
 The native fixture reuses the existing CLI register model. It validates actual
-shared CLI output, the negative/register/owner suites, reordered suites, cancellation after a write, retained
-shutdown one-shots and restoration. It does not emulate board electrical behavior
-or physical ALERT timing and never creates hardware PASS evidence.
+shared CLI output, detection and negative/register/owner suites, reordered suites, cancellation after a write, retained
+shutdown one-shots, quiet stress, a short soak and restoration. Fake-clock tests
+cover thousands of complete batches with bounded retained results, first-failure
+termination, console loss and interrupted durations. These do not emulate board electrical behavior
+or physical ALERT timing and never create hardware PASS evidence.
 See the [testing guide](testing.md) for generator-specific executable paths and
 the full host, framework and CI procedures.

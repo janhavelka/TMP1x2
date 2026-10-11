@@ -32,6 +32,19 @@ HEALTH = ("Health: state=READY online=yes consec=0 ok=20 fail=0\n"
 SAMPLE = "Temperature: 25.0000 C raw=0x1900 counts=400 extended=no timestamp=200 ms clock=known one-shot=unproven\n> "
 FIRMWARE = ("TMP1x2 diagnostic CLI | Arduino-ESP32 3.3.0 | esp32s3 | built Oct 11 2026 12:00:00\n"
             "Library: 1.0.0\nFirmware: git=abcdef0123456789abcdef0123456789abcdef01 tree=clean built=2026-10-11T10:00:00Z\n> ")
+CONSOLE = "Console: queued=0 sent=400 dropped=0 truncated=0\n> "
+BUS = "Bus settings: SDA=8 SCL=9 frequency=400000 Hz timeout=50 ms\n> "
+
+
+def discovery():
+    rows = []
+    for address in (*range(0x40, 0x44), *range(0x48, 0x4C)):
+        raw, candidate, code = ("0x60A0", "yes", "OK") if address == 0x48 else (
+            ("0x0000", "no", "CONFIG_MISMATCH") if address == 0x49 else
+            ("unavailable", "no", "I2C_NACK_ADDR"))
+        rows.append(f"Discover address=0x{address:02X} config={raw} candidate={candidate} code={code} detail=0 identity=unverified\n")
+    return ("[I] IN_PROGRESS detail=0\n> " + "".join(rows) +
+            "Discovery complete: checked=8 ack=2 readable=2 candidates=1 incompatible=1 absent=6 errors=0 identity=unverified\n[I] OK detail=0\n> ")
 
 
 def operation(token=5, status="OK", kind="CONFIGURE"):
@@ -113,7 +126,76 @@ class ProcessSerial:
         self.process.stderr.close()
 
 
+class SoakSession:
+    """Deterministic command durations and real parser use without UART or sleep."""
+    def __init__(self, failure_batch=None, interrupt_batch=None, console_loss_batch=None):
+        self.now = 0.0
+        self.batches = 0
+        self.logged_bytes = 0
+        self.transcript_error = None
+        self.failure_batch = failure_batch
+        self.interrupt_batch = interrupt_batch
+        self.console_loss_batch = console_loss_batch
+        self.restarted = False
+        self.framing_lost = False
+
+    def log(self, data):
+        self.logged_bytes += len(data)
+
+    def command(self, command, **kwargs):
+        self.now += 0.25
+        if command == "settings":
+            output = SETTINGS
+        elif command.startswith("verbose"):
+            output = "Verbose: " + ("off" if command.endswith(" 0") else "on") + "\n> "
+        elif command.startswith("stress_mix "):
+            self.batches += 1
+            count = int(command.split()[1])
+            fail = int(self.batches == self.failure_batch)
+            output = (f"Run: stopped target={count} completed={count} ok={4 * count - fail} fail={fail} elapsed=1000 ms remaining=0\n"
+                      f"Mixed checks: completed={4 * count} samples={count} (four checks per complete cycle)\n"
+                      f"Tracked health delta: ok={5 * count} fail=0\nAdapter delta: attempts={6 * count} ok={6 * count} fail=0\n> ")
+        elif command == "sample":
+            if self.batches == self.interrupt_batch:
+                raise KeyboardInterrupt()
+            output = SAMPLE
+        elif command == "health":
+            output = HEALTH
+        elif command == "console":
+            output = CONSOLE.replace("dropped=0", "dropped=1") if self.batches == self.console_loss_batch else CONSOLE
+        else:
+            raise AssertionError("unmodeled soak command: " + command)
+        outcome, reason = hil.classify(command, output)
+        return hil.Result(command, command, outcome, reason, output, 0.25)
+
+
 class ParserTests(unittest.TestCase):
+    def test_discovery_requires_complete_per_address_evidence_and_terminal_status(self):
+        output = discovery()
+        for command in ("discover", "detect"):
+            self.assertTrue(hil.response_complete(command, output))
+            self.assertEqual("PASS", hil.classify(command, output)[0])
+            self.assertFalse(hil.response_complete(command, "[I] IN_PROGRESS detail=0\n> "))
+            self.assertEqual("INCONCLUSIVE", hil.classify(command, output.replace("[I] OK detail=0", ""))[0])
+        self.assertEqual(dict(ack=2, candidates={0x48}, absent=6), hil.parse_discovery(output))
+        for old, new in (("checked=8", "checked=7"), ("ack=2", "ack=3"),
+                         ("readable=2", "readable=1"), ("absent=6", "absent=5"),
+                         ("address=0x40", "address=0x48"), ("address=0x40", "address=0x44"),
+                         ("config=0x60A0", "config=0x60A1"), ("config=0x0000", "config=0x60A0"),
+                         ("Discovery complete", "Discovery cancelled"),
+                         ("identity=unverified", "identity=TMP102")):
+            with self.subTest(old=old, new=new):
+                self.assertNotEqual("PASS", hil.classify("discover", output.replace(old, new))[0])
+        self.assertEqual("FAIL", hil.classify("discover", output.replace("errors=0", "errors=1"))[0])
+        self.assertEqual("FAIL", hil.classify("discover", output.replace("[I] OK", "[E] I2C_TIMEOUT"))[0])
+
+    def test_discovery_session_waits_past_admission_prompt(self):
+        admission, evidence = discovery().split("> ", 1)
+        session = hil.SerialSession(FakeSerial((admission + "> ").encode(), evidence.encode()), 5, 5, Clock())
+        result = session.command("discover")
+        self.assertEqual("PASS", result.outcome)
+        self.assertIn("Discovery complete", result.output)
+
     def test_unrelated_ok_cannot_certify_matching_operation_status(self):
         stale = "Operation result: token=4 kind=CONFIGURE elapsed=0 ms write-attempted=yes\n[I] OK detail=0\n"
         output = stale + operation().replace("[I] OK detail=0", "[I] IN_PROGRESS detail=0")
@@ -262,6 +344,28 @@ class ParserTests(unittest.TestCase):
                 self.assertEqual(2, hil.main(["--port", "fake", "--model", "tmp102", "--address", "0x48", "--report", str(path)]))
             report = json.loads(path.read_text())
             self.assertEqual("serial close", report["results"][0]["check"])
+
+    def test_serial_control_lines_are_selected_before_open_and_recorded(self):
+        for dtr, rts in ((0, 0), (1, 0), (1, 1)):
+            with self.subTest(dtr=dtr, rts=rts), tempfile.TemporaryDirectory() as directory:
+                connection = FakeSerial()
+                def opened():
+                    self.assertIs(bool(dtr), connection.dtr)
+                    self.assertIs(bool(rts), connection.rts)
+                connection.open = mock.Mock(side_effect=opened)
+                connection.close = mock.Mock()
+                serial = types.SimpleNamespace(Serial=mock.Mock(return_value=connection))
+                def passed(runner):
+                    runner.record(hil.Result("control line setup", "", "PASS", "checked before opening"))
+                path = Path(directory) / "report.json"
+                args = ["--port", "fake", "--model", "tmp102", "--address", "0x48", "--report", str(path),
+                        "--dtr", str(dtr), "--rts", str(rts)]
+                with mock.patch.dict(sys.modules, {"serial": serial}), mock.patch.object(hil.SerialSession, "capture_boot"), mock.patch.object(hil.Runner, "run", passed), contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(0, hil.main(args))
+                connection.open.assert_called_once()
+                report = json.loads(path.read_text())
+                self.assertEqual(dtr, report["metadata"]["dtr"])
+                self.assertEqual(rts, report["metadata"]["rts"])
 
     def test_transcript_close_failure_has_inconclusive_json_and_exit(self):
         class CloseFails:
@@ -451,7 +555,8 @@ class ParserTests(unittest.TestCase):
                 runner = hil.Runner(mock.Mock(), hil.parse_args(["--dry-run", "--model", "tmp102", "--address", "0x48", *extra]))
                 runner.session.transcript_error = None
                 responses = {"version": changed, "job": "Operation: active=no token=0", "stats": "No watch/stress run statistics.",
-                             "job auto": "Job auto: on", "settings": SETTINGS, "health": HEALTH, "verify": "[I] OK"}
+                             "job auto": "Job auto: on", "settings": SETTINGS, "health": HEALTH, "verify": "[I] OK",
+                             "console": CONSOLE, "bus": BUS}
                 runner.command = mock.Mock(side_effect=lambda command: hil.Result(command, command, "PASS", "fixture", responses[command]))
                 with contextlib.redirect_stdout(io.StringIO()):
                     if fails:
@@ -539,6 +644,75 @@ class ParserTests(unittest.TestCase):
                             wrong = output.replace(f"CONFIG=0x{word:04X}", f"CONFIG=0x{word & ~clear:04X}")
                             self.assertEqual("FAIL", hil.check_comparator(wrong, polarity, faults, active)[0])
 
+    def test_console_integrity_rejects_new_or_saturated_loss(self):
+        historical = CONSOLE.replace("dropped=0", "dropped=12")
+        baseline = hil.parse_console(historical)
+        self.assertEqual("PASS", hil.check_console(historical, baseline)[0])
+        self.assertEqual("FAIL", hil.check_console(historical.replace("dropped=12", "dropped=13"), baseline)[0])
+        self.assertEqual("FAIL", hil.check_console(historical.replace("truncated=0", "truncated=1"), baseline)[0])
+        saturated = CONSOLE.replace("dropped=0", "dropped=4294967295")
+        self.assertEqual("INCONCLUSIVE", hil.check_console(saturated, hil.parse_console(saturated))[0])
+
+    def test_long_soak_aggregates_without_per_pass_result_growth(self):
+        session = SoakSession()
+        args = hil.parse_args(["--dry-run", "--soak-seconds", "12000", "--soak-batch-count", "2"])
+        runner = hil.Runner(session, args, clock=lambda: session.now)
+        runner.console_baseline = hil.parse_console(CONSOLE)
+        with contextlib.redirect_stdout(io.StringIO()):
+            runner.soak()
+        summary = runner.soak_summary
+        self.assertEqual("PASS", summary["outcome"])
+        self.assertGreaterEqual(summary["elapsed_seconds"], 12000)
+        self.assertEqual(12000, summary["batches"])
+        self.assertEqual(24000, summary["completed_cycles"])
+        self.assertEqual(48000, summary["commands"])
+        self.assertEqual(48000, summary["outcomes"]["PASS"])
+        self.assertEqual(0.25, summary["latency_mean_seconds"])
+        self.assertLess(len(runner.results), 10)
+        self.assertGreater(session.logged_bytes, 100000)
+        self.assertTrue(runner.original_verbose)
+
+    def test_soak_stops_on_failure_or_output_loss_without_recovery(self):
+        for session in (SoakSession(failure_batch=3), SoakSession(console_loss_batch=3)):
+            runner = hil.Runner(session, hil.parse_args(["--dry-run", "--soak-seconds", "100"]), clock=lambda: session.now)
+            runner.console_baseline = hil.parse_console(CONSOLE)
+            with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(hil.CheckError):
+                runner.soak()
+            self.assertEqual("FAIL", runner.soak_summary["outcome"])
+            self.assertEqual(2, runner.soak_summary["batches"])
+            self.assertEqual(3, session.batches)
+            self.assertEqual(1, runner.soak_summary["outcomes"]["FAIL"])
+            self.assertLess(runner.soak_summary["elapsed_seconds"], 100)
+
+    def test_interrupted_soak_does_not_pass_a_partial_duration_or_batch(self):
+        session = SoakSession(interrupt_batch=3)
+        runner = hil.Runner(session, hil.parse_args(["--dry-run", "--soak-seconds", "100"]), clock=lambda: session.now)
+        runner.console_baseline = hil.parse_console(CONSOLE)
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(KeyboardInterrupt):
+            runner.soak()
+        self.assertEqual("INCONCLUSIVE", runner.soak_summary["outcome"])
+        self.assertEqual(2, runner.soak_summary["batches"])
+        self.assertLess(runner.soak_summary["elapsed_seconds"], 100)
+
+    def test_last_soak_evidence_write_failure_cannot_leave_a_pass_summary(self):
+        for marker in (b"soak validated: console:", b"=== Soak:", b"=== check: duration soak"):
+            with self.subTest(marker=marker):
+                session = SoakSession()
+                original_log = session.log
+                def failed_log(data):
+                    original_log(data)
+                    if marker in data:
+                        session.transcript_error = "disk full at final batch evidence"
+                session.log = failed_log
+                args = hil.parse_args(["--dry-run", "--soak-seconds", "1", "--soak-progress-seconds", "0.5"])
+                runner = hil.Runner(session, args, clock=lambda: session.now)
+                runner.console_baseline = hil.parse_console(CONSOLE)
+                with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(hil.CheckError):
+                    runner.soak()
+                self.assertEqual("INCONCLUSIVE", runner.soak_summary["outcome"])
+                self.assertIn("disk full", runner.soak_summary["reason"])
+                self.assertEqual("INCONCLUSIVE", runner.results[-1].outcome)
+
     def test_stop_waits_for_first_cancellation_restoration(self):
         output = "Configuration test cancelled; scheduling restoration of the captured profile.\n> "
         self.assertFalse(hil.response_complete("stop", output))
@@ -567,7 +741,9 @@ class ParserTests(unittest.TestCase):
                           ["--dry-run", "--min-c", "nan"], ["--dry-run", "--min-c", "20", "--max-c", "10"],
                           ["--dry-run", "--model", "tmp112d", "--address", "0x48"],
                           ["--dry-run", "--expected-firmware-commit", "unknown"],
-                          ["--dry-run", "--expected-target", "unknown"]):
+                          ["--dry-run", "--expected-target", "unknown"],
+                          ["--dry-run", "--soak-seconds", "nan"], ["--dry-run", "--soak-seconds", "604801"],
+                          ["--dry-run", "--soak-batch-count", "1001"], ["--dry-run", "--soak-batch-count", "0"]):
             with self.subTest(arguments=arguments), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 hil.parse_args(arguments)
 
@@ -622,7 +798,7 @@ class ParserTests(unittest.TestCase):
         serial = ProcessSerial(CLI_FIXTURE)
         args = hil.parse_args(["--port", "native-model", "--model", "tmp102", "--address", "0x48",
                                "--suite", "smoke", "--suite", "config", "--suite", "oneshot", "--suite", "stress",
-                               "--suite", "negative", "--suite", "owner", "--suite", "registers",
+                               "--suite", "negative", "--suite", "owner", "--suite", "registers", "--suite", "detection",
                                "--stress-count", "3", "--silence-seconds", "0.01"])
         session = hil.SerialSession(serial, 3, 8)
         runner = hil.Runner(session, args)
@@ -637,6 +813,36 @@ class ParserTests(unittest.TestCase):
             self.assertEqual("not requested", runner.firmware_verification)
         finally:
             serial.close()
+
+    @unittest.skipUnless(CLI_FIXTURE, "pass --cli-fixture PATH to validate actual shared CLI output")
+    def test_quiet_stress_and_soak_restore_original_presentation(self):
+        for original_verbose in (True, False):
+            with self.subTest(original_verbose=original_verbose):
+                serial = ProcessSerial(CLI_FIXTURE)
+                session = hil.SerialSession(serial, 3, 8)
+                args = hil.parse_args(["--port", "native-model", "--model", "tmp102", "--address", "0x48",
+                                       "--suite", "stress", "--stress-count", "3", "--silence-seconds", "0.01",
+                                       "--soak-seconds", "0.03", "--soak-batch-count", "2"])
+                runner = hil.Runner(session, args)
+                try:
+                    session.capture_boot(0.2)
+                    self.assertEqual("PASS", session.command(f"verbose {int(original_verbose)}").outcome)
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        runner.run()
+                    failures = [result for result in runner.results if result.outcome in {"FAIL", "INCONCLUSIVE"}]
+                    self.assertEqual([], failures, "\n\n".join(session.transcript))
+                    self.assertEqual("PASS", runner.soak_summary["outcome"])
+                    self.assertGreaterEqual(runner.soak_summary["elapsed_seconds"], 0.03)
+                    self.assertGreater(runner.soak_summary["batches"], 0)
+                    self.assertEqual("not required", runner.restoration)  # Continuous reads did not change config.
+                    self.assertEqual("verified", runner.presentation_restoration)
+                    self.assertEqual(original_verbose, runner.original_verbose)
+                    self.assertIn("Verbose: " + ("on" if original_verbose else "off"), session.command("verbose").output)
+                    stress_results = [result for result in runner.results if result.command.startswith(("stress ", "stress_mix "))]
+                    self.assertTrue(stress_results)
+                    self.assertFalse(any("Temperature:" in result.output for result in stress_results))
+                finally:
+                    serial.close()
 
     @unittest.skipUnless(CLI_FIXTURE, "pass --cli-fixture PATH to validate actual shared CLI output")
     def test_reordered_suites_restore_their_entry_profile(self):

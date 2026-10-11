@@ -23,7 +23,12 @@ struct Fixture {
   bool failReceive = false;
   int probeNackAddress = -1;
   int probeErrorAddress = -1;
+  bool probeAllAbsent = false;
   unsigned probed[128]{};
+  unsigned readAddresses[128]{};
+  TMP1x2::Err readErrors[128]{};
+  int mismatchedAddress = -1;
+  uint16_t mismatchedConfig = 0;
   tmp1x2_cli::TransferStats adapter{};
   uint16_t regs[4] = {0x1900, 0x60A0, 0x4B00, 0x5000};
   static uint32_t now(void* user) { return static_cast<Fixture*>(user)->timeMs; }
@@ -32,11 +37,12 @@ struct Fixture {
     for (unsigned i = 0; i < 1200; ++i) { ++timeMs; cli.tick(); }
   }
   static tmp1x2_cli::TransferStats stats(void* user) { return static_cast<Fixture*>(user)->adapter; }
+  static tmp1x2_cli::ConsoleStats consoleStats(void*) { return {}; }
   static void resetStats(void* user) { static_cast<Fixture*>(user)->adapter = tmp1x2_cli::TransferStats{}; }
   static bool gpio(int, void* user) { auto& f = *static_cast<Fixture*>(user); ++f.gpioReads; return f.pinLevel; }
   static TMP1x2::Status probe(uint8_t address, void* user) {
     auto& f = *static_cast<Fixture*>(user); ++f.transfers; ++f.probed[address];
-    const bool nack = address == f.probeNackAddress, error = address == f.probeErrorAddress;
+    const bool nack = f.probeAllAbsent || address == f.probeNackAddress, error = address == f.probeErrorAddress;
     f.adapter.record(!nack && !error);
     if (nack) return TMP1x2::Status::Error(TMP1x2::Err::I2C_NACK_ADDR, "scan NACK");
     if (error) return TMP1x2::Status::Error(TMP1x2::Err::I2C_ERROR, "scan fault");
@@ -60,6 +66,7 @@ struct Fixture {
     tmp1x2_cli::Platform p;
     p.vprintf = print; p.nowMs = now; p.user = this;
     p.transferStats = stats; p.resetTransferStats = resetStats; p.probeAddress = probe;
+    p.consoleStats = consoleStats;
     p.busWrite = write; p.busReceive = receive;
     return p;
   }
@@ -93,7 +100,12 @@ struct Fixture {
   }
   static TMP1x2::Status read(uint8_t address, const uint8_t* data, size_t n, uint8_t* out, size_t count, uint32_t, void* user) {
     auto& f = *static_cast<Fixture*>(user); ++f.transfers;
+    ++f.readAddresses[address];
     f.lastAddress = address;
+    if (f.readErrors[address] != TMP1x2::Err::OK) {
+      f.adapter.record(false);
+      return TMP1x2::Status::Error(f.readErrors[address], "address-specific read result", address);
+    }
     if (f.readFailures) {
       --f.readFailures;
       f.adapter.record(false);
@@ -101,6 +113,10 @@ struct Fixture {
     }
     f.adapter.record(true);
     if (n != 1 || count != 2 || data[0] > 3) return TMP1x2::Status::Error(TMP1x2::Err::INVALID_PARAM, "framing");
+    if (address == f.mismatchedAddress && data[0] == 1) {
+      out[0] = static_cast<uint8_t>(f.mismatchedConfig >> 8U); out[1] = static_cast<uint8_t>(f.mismatchedConfig);
+      return TMP1x2::Status::Ok();
+    }
     if (f.pending && !f.stuck && static_cast<int32_t>(f.timeMs - f.readyAtMs) >= 0) {
       f.pending = false; f.regs[1] |= 0x8000U;
       f.regs[0] = (f.regs[1] & 0x10U) != 0 ? 0x0C81 : 0x1900;
@@ -157,6 +173,18 @@ int main(int argc, char** argv) {
   }
   cli.processCommand("color off"); f.output.clear(); cli.processCommand("help");
   CHECK(f.output.find('\033') == std::string::npos);
+  for (const char* topic : {"common", "connection", "data", "job", "config", "alert", "registers", "diagnostics", "all"}) {
+    f.output.clear(); cli.processCommand((std::string("help ") + topic).c_str());
+    CHECK(f.output.find("[E]") == std::string::npos && f.output.find(" - ") != std::string::npos);
+  }
+  f.output.clear(); cli.processCommand("? connection");
+  CHECK(f.output.find("[Connection and discovery]") != std::string::npos);
+  CHECK(f.output.find("discover / detect") != std::string::npos && f.output.find("console") != std::string::npos);
+  CHECK(f.output.find("[Data]") == std::string::npos && f.output.find("[Configuration]") == std::string::npos);
+  for (const char* command : {"help unknown", "help data extra", "? all extra"}) {
+    f.output.clear(); cli.processCommand(command); CHECK(f.output.find("INVALID_PARAM") != std::string::npos);
+  }
+  CHECK(f.transfers == traffic);
   f.output.clear(); cli.processCommand("read"); CHECK(f.output.find("25.0000") != std::string::npos || f.output.find("25.000") != std::string::npos);
   const unsigned before = f.transfers;
   const std::string tooLong = "wreg 1 0x6100 " + std::string(180, ' ');
@@ -404,10 +432,13 @@ int main(int argc, char** argv) {
     CHECK(family.transfers == beforeGpio && family.gpioReads == 1);
     family.pinLevel = true; shell.processCommand("intpin");
     CHECK(family.output.find("Physical ALERT: inactive") != std::string::npos);
+    for (auto& reads : family.readAddresses) reads = 0;
     shell.processCommand("discover");
     family.settle(shell);
-    for (unsigned address = 0; address < 128; ++address)
-      CHECK(family.probed[address] == ((address >= 0x40 && address <= 0x43) || (address >= 0x48 && address <= 0x4B) ? 1U : 0U));
+    for (unsigned address = 0; address < 128; ++address) {
+      CHECK(family.readAddresses[address] == ((address >= 0x40 && address <= 0x43) || (address >= 0x48 && address <= 0x4B) ? 1U : 0U));
+      CHECK(family.probed[address] == family.readAddresses[address]);
+    }
     shell.processCommand("end"); const unsigned afterEnd = family.transfers;
     shell.processCommand("model tmp112d"); shell.processCommand("addr 0x43");
     CHECK(family.transfers == afterEnd);
@@ -518,26 +549,95 @@ int main(int argc, char** argv) {
     scanning.output.clear(); shell.processCommand("health");
     const auto health = scanning.output.substr(0, scanning.output.find('\n'));
     const unsigned initial = scanning.transfers;
-    scanning.probeNackAddress = 0x40; scanning.probeErrorAddress = 0x49;
+    scanning.probeNackAddress = 0x40;
+    scanning.readErrors[0x49] = TMP1x2::Err::I2C_TIMEOUT;
+    scanning.mismatchedAddress = 0x42; scanning.mismatchedConfig = 0xFFFF;
     scanning.output.clear(); shell.processCommand("discover"); CHECK(scanning.transfers == initial);
-    for (unsigned phase = 0; phase < 8; ++phase) {
+    for (unsigned phase = 0; phase < 15; ++phase) {
       const unsigned beforeTick = scanning.transfers; shell.tick(); CHECK(scanning.transfers == beforeTick + 1);
     }
-    CHECK(scanning.output.find("Scan complete: 8 probed, 6 ACK, 1 other transport errors") != std::string::npos);
+    CHECK(scanning.output.find("Discovery complete: checked=8 ack=7 readable=6 candidates=5 incompatible=1 absent=1 errors=1 identity=unverified") != std::string::npos);
+    CHECK(scanning.output.find("Discover address=0x42 config=0xFFFF candidate=no code=CONFIG_MISMATCH detail=65535 identity=unverified") != std::string::npos);
+    CHECK(scanning.output.find("Discover address=0x49 config=unavailable candidate=no code=I2C_TIMEOUT detail=73 identity=unverified") != std::string::npos);
+    CHECK(scanning.output.find("[E] I2C_TIMEOUT") != std::string::npos);
     scanning.output.clear(); shell.processCommand("health");
     CHECK(scanning.output.substr(0, scanning.output.find('\n')) == health);
-    scanning.probeNackAddress = -1; scanning.probeErrorAddress = -1;
+    scanning.probeNackAddress = 0x40; scanning.probeErrorAddress = 0x49;
     scanning.output.clear(); shell.processCommand("scan");
     for (unsigned phase = 0; phase < 112; ++phase) {
       const unsigned beforeTick = scanning.transfers; shell.tick(); CHECK(scanning.transfers == beforeTick + 1);
     }
-    CHECK(scanning.output.find("Scan complete: 112 probed, 112 ACK, 0 other transport errors") != std::string::npos);
+    CHECK(scanning.output.find("Scan complete: 112 probed, 110 ACK, 1 other transport errors") != std::string::npos);
+    CHECK(scanning.output.find("Scan error address=0x49 code=I2C_ERROR") != std::string::npos);
+    CHECK(scanning.output.find("ACK 0x48; identity unverified") != std::string::npos);
+    CHECK(scanning.output.find("TMP102/TMP112-compatible") == std::string::npos);
     shell.processCommand("scan"); shell.tick(); shell.tick();
     const unsigned beforeStop = scanning.transfers; shell.processCommand("cancel"); scanning.settle(shell);
     CHECK(scanning.transfers == beforeStop);
     scanning.output.clear(); shell.processCommand("result");
     CHECK(scanning.output.find("Scan cancelled: 2 probed") != std::string::npos);
     shell.processCommand("scan 1"); shell.processCommand("discover extra"); CHECK(scanning.transfers == beforeStop);
+  }
+  {
+    Fixture discovery; tmp1x2_cli::Cli shell;
+    shell.setup(discovery.platform(), discovery.config()); discovery.settle(shell); shell.processCommand("color off");
+    shell.processCommand("read"); discovery.output.clear();
+    shell.processCommand("health"); shell.processCommand("settings"); shell.processCommand("sample");
+    const auto beforeHealth = discovery.output.substr(0, discovery.output.find("Bus:"));
+    const auto beforeProfileAndSample = discovery.output.substr(discovery.output.find("Desired:"));
+    const unsigned writes = discovery.writes;
+    discovery.mismatchedAddress = 0x48; discovery.mismatchedConfig = 0x61F0; // Plausible, unlike selected desired profile.
+    discovery.output.clear(); shell.processCommand("detect");
+    const unsigned start = discovery.transfers;
+    for (unsigned i = 0; i < 16; ++i) { shell.tick(); CHECK(discovery.transfers == start + i + 1); }
+    CHECK(discovery.output.find("candidates=8 incompatible=0 absent=0 errors=0 identity=unverified") != std::string::npos);
+    CHECK(discovery.writes == writes);
+    discovery.output.clear(); shell.processCommand("health"); shell.processCommand("settings"); shell.processCommand("sample");
+    CHECK(discovery.output.substr(0, discovery.output.find("Bus:")) == beforeHealth);
+    CHECK(discovery.output.substr(discovery.output.find("Desired:")) == beforeProfileAndSample);
+    for (uint16_t invalid : {uint16_t{0x2020}, uint16_t{0x60A1}}) {
+      discovery.mismatchedConfig = invalid; discovery.output.clear(); shell.processCommand("discover");
+      for (unsigned i = 0; i < 16; ++i) shell.tick();
+      CHECK(discovery.output.find("candidates=7 incompatible=1 absent=0 errors=0") != std::string::npos);
+    }
+    // Whole-address NACK proves absence; data NACK and nonterminal callbacks do not.
+    discovery.probeAllAbsent = true;
+    discovery.output.clear(); shell.processCommand("discover");
+    for (unsigned i = 0; i < 8; ++i) shell.tick();
+    CHECK(discovery.output.find("checked=8 ack=0 readable=0 candidates=0 incompatible=0 absent=8 errors=0") != std::string::npos);
+    CHECK(discovery.output.find("[E] DEVICE_NOT_FOUND") != std::string::npos);
+    discovery.probeAllAbsent = false;
+    discovery.readErrors[0x40] = TMP1x2::Err::I2C_ERROR;
+    discovery.readErrors[0x41] = TMP1x2::Err::IN_PROGRESS;
+    discovery.output.clear(); shell.processCommand("discover");
+    for (unsigned i = 0; i < 4; ++i) shell.tick();
+    const unsigned beforeCancel = discovery.transfers;
+    shell.processCommand("stop"); discovery.settle(shell);
+    CHECK(discovery.transfers == beforeCancel);
+    CHECK(discovery.output.find("Discovery cancelled: checked=2 ack=2 readable=0 candidates=0 incompatible=0 absent=0 errors=2") != std::string::npos);
+    CHECK(discovery.output.find("address=0x40 config=unavailable candidate=no code=I2C_ERROR") != std::string::npos);
+    CHECK(discovery.output.find("address=0x41 config=unavailable candidate=no code=I2C_ERROR") != std::string::npos);
+    CHECK(discovery.output.find("[E] CANCELLED") != std::string::npos);
+    discovery.output.clear(); shell.processCommand("result");
+    CHECK(discovery.output.find("Discovery cancelled: checked=2") != std::string::npos);
+    for (const char* command : {"discover extra", "detect extra"}) shell.processCommand(command);
+    CHECK(discovery.transfers == beforeCancel && discovery.output.find("INVALID_PARAM") != std::string::npos);
+    discovery.output.clear(); shell.processCommand("detect"); shell.tick();
+    CHECK(discovery.transfers == beforeCancel + 1);
+    shell.processCommand("cancel"); discovery.settle(shell);
+    CHECK(discovery.transfers == beforeCancel + 1); // Cancel between ACK and CONFIG read.
+    CHECK(discovery.output.find("Discovery cancelled: checked=0 ack=1 readable=0") != std::string::npos);
+    shell.processCommand("unbind");
+    discovery.output.clear(); shell.processCommand("detect");
+    for (unsigned i = 0; i < 16; ++i) shell.tick();
+    CHECK(discovery.output.find("Discovery complete: checked=8") != std::string::npos);
+    auto missingProbe = discovery.platform(); missingProbe.probeAddress = nullptr;
+    for (auto& error : discovery.readErrors) error = TMP1x2::Err::OK;
+    discovery.mismatchedAddress = -1;
+    shell.setup(missingProbe, discovery.config()); discovery.settle(shell);
+    const unsigned beforeMissingProbe = discovery.transfers;
+    discovery.output.clear(); shell.processCommand("scan"); shell.processCommand("discover");
+    CHECK(discovery.transfers == beforeMissingProbe && discovery.output.find("INVALID_CONFIG") != std::string::npos);
   }
   {
     Fixture full; tmp1x2_cli::Cli shell;
@@ -867,6 +967,19 @@ int main(int argc, char** argv) {
     CHECK(late.output.find("Hardware thresholds:") != std::string::npos);
     CHECK(late.output.find("[FAIL] decoded thresholds and ordering") != std::string::npos);
     CHECK(late.output.find("complete pass=2 fail=1 skip=0") != std::string::npos);
+  }
+  {
+    Fixture longRun; tmp1x2_cli::Cli shell;
+    shell.setup(longRun.platform(), longRun.config()); longRun.settle(shell);
+    shell.processCommand("quiet 1"); shell.processCommand("watch 4 60000");
+    for (unsigned i = 0; i < 3; ++i) { longRun.timeMs += 2000000000U; shell.tick(); }
+    longRun.output.clear(); shell.processCommand("stats");
+    CHECK(longRun.output.find("elapsed=6000000000 ms") != std::string::npos);
+    longRun.timeMs += 1000U;
+    shell.processCommand("stop"); longRun.output.clear();
+    longRun.timeMs += 1234U; shell.tick(); shell.processCommand("stats");
+    CHECK(longRun.output.find("elapsed=6000001000 ms") != std::string::npos);
+    CHECK(longRun.output.find("Run: stopped target=4 completed=3") != std::string::npos);
   }
   std::puts("CLI parsing, diagnostics, full configuration exercise/restoration, bus operations, field helpers and cooperative workflows passed");
   return 0;

@@ -295,3 +295,42 @@ summary and `Baseline restoration: verified`. On a separate run, disconnect
 during restoration, and on another issue a second `stop` while restoring. Both
 must report restoration not verified and retain the original desired profile for
 later recovery. Restore connection/automatic polling and reinitialize explicitly.
+
+## USB, serial stalls and sustained operation
+
+Run these checks separately on Arduino S2/S3 and native IDF S2/S3 using the
+actual USB data connector. A board's UART bridge and its native USB connector
+can expose different ports. Record the console backend, baud rate and DTR/RTS
+settings, `version`, `bus` and `console` before each run. Arduino S2 TinyUSB
+requires DTR asserted; keep RTS deasserted. Avoid a 1200-baud touch or upload/reset
+operation during evidence collection.
+
+1. Run the host soak described in [the runner guide](hil-runner.md) for the
+   required duration. Keep its JSON summary and streamed transcript. Require
+   completed batches with matching sample counts, trusted configuration, zero
+   new transport failures and no new console drops or truncation. A quiet
+   terminal is not evidence of continued measurement; check completed work.
+2. With the board independently powered, start `quiet 1` followed by
+   `watch 100000 1000`. Disconnect only USB data. Use an I2C trace to show that
+   sampling continues while the host is absent. Reconnect to the same firmware,
+   inspect `stats`, `health` and `console`, then issue `stop`. Confirm that no
+   boot/reset occurred and that cancellation leaves no later background I2C.
+   A lost USB power supply invalidates this as a data-disconnect test.
+3. Repeat with verbose output and pause host reads long enough to fill the
+   bounded output queue. Confirm that I2C scheduling and command processing
+   still progress, the queue remains bounded, and the retained console counters
+   report dropped bytes. After reads resume, require the explicit
+   `CONSOLE_OUTPUT_LOST` diagnostic. This is an intentional output-loss test;
+   its transcript cannot be used to claim a successful soak.
+4. Send a long input burst while sampling. Check the configured input budget
+   leaves time for sampling and output service. Malformed or oversized command
+   lines must be discarded, never completed as a different hardware command.
+5. Repeat a short unplug/reconnect and host-read stall on each backend. Capture
+   actual device and host behavior, including any reset, missing prompt or
+   driver-buffer loss. `sent` counts bytes accepted by the transport and does
+   not prove host receipt. The runner rejects incomplete responses and detected
+   resets; it cannot prove the absence of an unreported USB or power event.
+
+Record temperature plausibility, transport/console counters, reset evidence,
+duration and stop result. Do not mark these procedures PASS from mocked output
+queues, builds, or a dry run. They remain NOT_RUN until exercised on the board.

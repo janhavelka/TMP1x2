@@ -20,12 +20,15 @@ REQUIRED = {
     "include/TMP1x2/BusOperations.h", "src/BusOperations.cpp",
     "examples/common/Tmp1x2Cli.h", "examples/common/Tmp1x2Cli.cpp",
     "examples/common/Tmp1x2CliDiagnostics.cpp", "examples/common/Tmp1x2CliOutput.cpp",
-    "examples/common/BoardConfig.h", "examples/01_basic_bringup_cli/main.cpp",
+    "examples/common/BoardConfig.h", "examples/common/ConsoleBuffer.h",
+    "examples/01_basic_bringup_cli/main.cpp",
     "examples/esp_idf/basic/CMakeLists.txt", "examples/esp_idf/basic/main/CMakeLists.txt",
     "examples/esp_idf/basic/main/main.cpp", "examples/esp_idf/basic/main/BuildIdentity.cmake",
     "examples/esp_idf/basic/platformio.ini",
     "examples/esp_idf/basic/generate_identity.py",
     "examples/esp_idf/basic/sdkconfig.defaults",
+    "examples/esp_idf/basic/sdkconfig.defaults.esp32s2",
+    "examples/esp_idf/basic/sdkconfig.defaults.esp32s3",
 }
 
 

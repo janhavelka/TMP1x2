@@ -45,7 +45,13 @@ idf.py build
 idf.py -p PORT flash monitor
 ```
 
-Use `esp32s2` for S2. The example uses the configured native IDF console; change console settings with `idf.py menuconfig` when using a USB console instead of UART.
+Use `esp32s2` for S2. Fresh SDK configurations select USB Serial/JTAG on S3 and
+ROM USB CDC on S2, with a 1000 Hz FreeRTOS tick. Explicit selections in `sdkconfig`
+override defaults; SDK-generated default values can follow updated defaults on
+regeneration. Inspect the generated console and tick settings, or select them
+with `idf.py menuconfig`. Preserve a copy of custom SDK settings before changing
+build configurations. UART consoles remain supported; use `console` to check the
+running backend.
 
 The existing VS Code-managed PlatformIO can also build the same native IDF
 application from the repository root:
@@ -64,9 +70,49 @@ commands at 0x00 and 0x0C. Creating handles does not probe or reset a device. An
 input task queues characters with backpressure; only `app_main` calls the command
 processor, driver and bus. There is no Arduino API or compatibility facade in this
 example. The root component has no framework dependencies; the example depends
-on IDF I2C, timer, GPIO and task facilities.
+on IDF I2C, timer, GPIO, console drivers and task facilities.
+
+## USB and long runs
+
+| Example | Default console | Monitor DTR / RTS |
+| --- | --- | --- |
+| Arduino S3 | USB Serial/JTAG | 0 / 0 |
+| Arduino S2 | TinyUSB CDC | 1 / 0 |
+| Native IDF S3 | USB Serial/JTAG | 0 / 0 |
+| Native IDF S2 | ROM USB CDC | 1 / 0 |
+
+Use the board's native USB connector for these defaults. Arduino S2 needs DTR
+asserted to transmit; the HIL runner therefore needs `--dtr 1 --rts 0` there.
+Choose line settings for the actual console when overriding it with a UART
+bridge. Avoid changing baud to 1200 or toggling reset/boot lines during a run.
+
+Both adapters queue CLI output in a fixed 16 KiB buffer. Formatting does not wait
+for a host. Each loop services at most 64 input characters, advances cooperative
+work, offers at most 256 output bytes to a ready backend and yields. The S2 ROM
+CDC path offers at most 64 bytes per write. Arduino USB uses a zero TX timeout;
+native IDF uses nonblocking backend writes. Input backpressure and console queues
+belong to the example adapters; the core remains framework-free.
+
+`console` reports the actual backend, queued bytes, accepted bytes, dropped bytes
+and oversized messages. Accepted bytes do not prove host receipt. A stalled host
+can fill the buffer; complete formatted chunks are then dropped and an
+`[E] CONSOLE_OUTPUT_LOST` marker is queued when space returns. Counters saturate
+instead of wrapping. Use `verbose 0` for long stress runs, and treat new loss as
+failed evidence. Watch elapsed time uses a 64-bit accumulator, provided the loop
+continues servicing its 32-bit clock at least once per clock period.
+
+The [runner](../docs/hil-runner.md) provides duration soaks and checks console
+loss. The [hardware procedure](../docs/hardware-validation.md) covers host stalls,
+data-cable disconnects and independent I2C observation. Builds and mocked writes
+do not establish physical USB behavior.
 
 ## Typical session
+
+`help` shows all command groups with the same layout and colors in both
+frameworks. `help connection`, `help data`, `help job`, `help config`,
+`help alert`, `help registers` and `help diagnostics` show one group;
+`help common` covers console preferences and `help all` restores the full view.
+`?` accepts the same topics. Help is bus-silent and remains available during work.
 
 ```text
 help
@@ -207,11 +253,32 @@ the driver's tracked physical-transfer counters.
 
 ## Comprehensive test workflows
 
-`scan` and `discover` now probe one address per tick. `job` reports cached
-progress and `result` reports the last completion. `stop`/`cancel` end these
-read-only workflows without further bus traffic. Scan covers 0x08..0x77;
-discovery covers only the eight possible sensor addresses. An ACK is not chip
-identification; a transport error other than address NACK is reported separately.
+`scan` performs 112 address-only probes from 0x08 through 0x77, one per tick.
+It prints each ACK and each transport error other than address NACK. An ACK
+proves an address responded; it does not identify a chip. Scan does not change
+mux routing or the selected target.
+
+`discover` (`detect`) checks the eight possible sensor addresses,
+0x40..0x43 and 0x48..0x4B. It probes each address, then reads CONFIG only after
+an ACK, with at most one callback per tick. Separating the phases lets native
+IDF distinguish absence from a failed register transaction. It uses the same
+resolution/reserved fixed-bit checks as the driver's `probe`. Each address reports the raw word or
+transport status and whether that word is a plausible TMP1x2 register map.
+Readable but incompatible words, absent addresses and other transport errors
+are separate outcomes. A plausible word does not prove the chip family,
+TMP102 versus TMP112, ordering code, package, wiring or measurement accuracy.
+Confirm those from the BOM and hardware; discovery never selects a model/address.
+The completion summary records `checked`, `ack`, `readable`, `candidates`,
+`incompatible`, `absent` and `errors`. A complete run uses `8 + ack` callbacks.
+Cancellation can leave an ACK whose CONFIG read has not yet run, so `checked`
+counts completed address outcomes only. Errors remain failures even when other
+addresses contain plausible candidates.
+
+`job` reports cached diagnostic progress and `result` reports the last
+completion. `stop`/`cancel` end scanning/discovery without further bus traffic.
+Both leave driver health, desired settings, configuration trust and the cached
+CLI sample unchanged; their physical transactions count in `xfer_stats`.
+Discovery's CONFIG reads may acknowledge interrupt ALERT on responding devices.
 
 `selfcheck` or bare `selftest` runs a cooperative read-only sequence with
 pass/fail/skip counts: interface plausibility, configuration, thresholds,

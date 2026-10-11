@@ -15,6 +15,7 @@
 namespace {
 tmp1x2_cli::Cli cli;
 tmp1x2_cli::TransferStats transfers;
+tmp1x2_cli::ConsoleBuffer<> console;
 TMP1x2::Status mapWire(uint8_t code) {
   using TMP1x2::Err;
   if (code == 0) return TMP1x2::Status::Ok();
@@ -79,10 +80,29 @@ TMP1x2::Status receiveI2c(uint8_t address, uint8_t* rx, size_t length, uint32_t 
 uint32_t nowMs(void*) { return millis(); }
 void cooperativeYield(void*) { delay(1); }
 void output(void*, const char* format, va_list args) {
-  char buffer[512];
-  const int length = vsnprintf(buffer, sizeof(buffer), format, args);
-  if (length > 0) Serial.write(reinterpret_cast<const uint8_t*>(buffer),
-      static_cast<size_t>(length) < sizeof(buffer) ? static_cast<size_t>(length) : sizeof(buffer) - 1);
+  console.format(format, args);
+}
+size_t writeConsole(void*, const char* data, size_t length) {
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+  // HWCDC otherwise accepts disconnected writes by replacing older FIFO data.
+  if (!Serial) return 0;
+#endif
+  // USBCDC's bool requires DTR+RTS; its write readiness correctly needs DTR only.
+  const int available = Serial.availableForWrite();
+  if (available <= 0) return 0;
+  if (length > static_cast<size_t>(available)) length = static_cast<size_t>(available);
+  return Serial.write(reinterpret_cast<const uint8_t*>(data), length);
+}
+tmp1x2_cli::ConsoleStats consoleStats(void*) {
+  auto result = console.stats();
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+  result.backend = "USB-Serial-JTAG";
+#elif ARDUINO_USB_CDC_ON_BOOT
+  result.backend = "TinyUSB-CDC";
+#else
+  result.backend = "UART0";
+#endif
+  return result;
 }
 tmp1x2_cli::TransferStats stats(void*) { return transfers; }
 void resetStats(void*) { transfers = tmp1x2_cli::TransferStats{}; }
@@ -98,13 +118,16 @@ bool validAlertPin(int pin) {
 
 void setup() {
   Serial.begin(board::SERIAL_BAUD);
-  const uint32_t started = millis();
-  while (!Serial && millis() - started < 3000U) delay(10);
+#if ARDUINO_USB_CDC_ON_BOOT
+  Serial.setTxTimeoutMs(0);
+#endif
   if (board::ALERT_PIN >= 0 && !validAlertPin(board::ALERT_PIN)) {
-    Serial.println("[E] Invalid ALERT input configuration"); return;
+    constexpr char message[] = "[E] Invalid ALERT input configuration\n";
+    console.append(message, sizeof(message) - 1); return;
   }
   if (!Wire.begin(board::I2C_SDA, board::I2C_SCL, board::I2C_FREQUENCY_HZ)) {
-    Serial.println("[E] Application failed to initialize I2C");
+    constexpr char message[] = "[E] Application failed to initialize I2C\n";
+    console.append(message, sizeof(message) - 1);
     return;
   }
   TMP1x2::Config config{};
@@ -126,6 +149,7 @@ void setup() {
   platform.probeAddress = probe;
   platform.transferStats = stats;
   platform.resetTransferStats = resetStats;
+  platform.consoleStats = consoleStats;
   platform.busWrite = writeI2c;
   platform.busReceive = receiveI2c;
   platform.sdaPin = board::I2C_SDA;
@@ -146,5 +170,6 @@ void loop() {
   for (unsigned count = 0; count < 64 && Serial.available(); ++count)
     cli.feed(static_cast<char>(Serial.read()));
   cli.tick();
+  console.drain(writeConsole);
   delay(1);
 }

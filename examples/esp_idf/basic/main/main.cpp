@@ -12,6 +12,19 @@
 #include <freertos/queue.h>
 #include <freertos/task.h>
 #include <sdkconfig.h>
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+#include <driver/usb_serial_jtag.h>
+#include <driver/usb_serial_jtag_vfs.h>
+#elif CONFIG_ESP_CONSOLE_USB_CDC
+// ROM CDC's VFS reports full writes even when it drops bytes. Keep this
+// example-only SDK dependency here; the library and shared CLI stay portable.
+#include <esp_private/usb_console.h>
+#elif CONFIG_ESP_CONSOLE_UART
+#include <driver/uart.h>
+#include <driver/uart_vfs.h>
+#else
+#error "The example CLI requires a USB or UART console"
+#endif
 #include "BoardConfig.h"
 #include "Tmp1x2Cli.h"
 
@@ -22,6 +35,7 @@ struct App {
   i2c_master_bus_handle_t bus = nullptr;
   i2c_master_dev_handle_t devices[deviceCount]{};
   tmp1x2_cli::TransferStats stats{};
+  tmp1x2_cli::ConsoleBuffer<> console{};
   QueueHandle_t input = nullptr;
   tmp1x2_cli::Cli cli{};
 } app;
@@ -68,7 +82,58 @@ TMP1x2::Status receiveI2c(uint8_t address, uint8_t* rx, size_t length, uint32_t 
 }
 uint32_t nowMs(void*) { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }
 void cooperativeYield(void*) { vTaskDelay(1); }
-void output(void*, const char* format, va_list args) { std::vprintf(format, args); }
+void output(void*, const char* format, va_list args) { app.console.format(format, args); }
+tmp1x2_cli::ConsoleStats consoleStats(void*) {
+  auto result = app.console.stats();
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+  result.backend = "USB-Serial-JTAG";
+#elif CONFIG_ESP_CONSOLE_USB_CDC
+  result.backend = "ROM-USB-CDC";
+#elif CONFIG_ESP_CONSOLE_UART_NUM == 0
+  result.backend = "UART0";
+#elif CONFIG_ESP_CONSOLE_UART_NUM == 1
+  result.backend = "UART1";
+#else
+  result.backend = "UART2";
+#endif
+  return result;
+}
+esp_err_t initializeConsole() {
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+  usb_serial_jtag_driver_config_t config{};
+  config.rx_buffer_size = 256;
+  config.tx_buffer_size = 512;
+  const esp_err_t result = usb_serial_jtag_driver_install(&config);
+  if (result == ESP_OK) usb_serial_jtag_vfs_use_driver();
+  return result;
+#elif CONFIG_ESP_CONSOLE_USB_CDC
+  // The startup console has already initialized the ROM CDC device.
+  return esp_usb_console_is_installed() ? ESP_OK : ESP_ERR_INVALID_STATE;
+#else
+  const auto port = static_cast<uart_port_t>(CONFIG_ESP_CONSOLE_UART_NUM);
+  const esp_err_t result = uart_driver_install(port, 256, 0, 0, nullptr, 0);
+  if (result == ESP_OK) uart_vfs_dev_use_driver(port);
+  return result;
+#endif
+}
+size_t writeConsole(void*, const char* data, size_t length) {
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+  // A zero RTOS wait retains application bytes when the driver queue is full.
+  const int sent = usb_serial_jtag_write_bytes(data, length, 0);
+#elif CONFIG_ESP_CONSOLE_USB_CDC
+  // This checks the ROM USB endpoint, not just free software-buffer space.
+  if (!esp_usb_console_write_available()) return 0;
+  if (length > 64) length = 64;
+  const auto sent = esp_usb_console_write_buf(data, length);
+  // A prompt has no newline. Never call flush while the endpoint is unavailable.
+  if (esp_usb_console_write_available()) (void)esp_usb_console_flush();
+#else
+  // The UART driver is installed with no TX ring; fill only the available FIFO.
+  const int sent = uart_tx_chars(static_cast<uart_port_t>(CONFIG_ESP_CONSOLE_UART_NUM), data,
+                                static_cast<uint32_t>(length));
+#endif
+  return sent > 0 ? static_cast<size_t>(sent) : 0;
+}
 tmp1x2_cli::TransferStats stats(void*) { return app.stats; }
 void resetStats(void*) { app.stats = tmp1x2_cli::TransferStats{}; }
 bool alertLevel(int pin, void*) { return gpio_get_level(static_cast<gpio_num_t>(pin)) != 0; }
@@ -89,6 +154,10 @@ extern "C" void app_main() {
   // Avoid console stdio buffering changing the shared CLI's behavior.
   std::setvbuf(stdin, nullptr, _IONBF, 0);
   std::setvbuf(stdout, nullptr, _IONBF, 0);
+  const esp_err_t consoleError = initializeConsole();
+  if (consoleError != ESP_OK) {
+    std::printf("[E] Console initialization failed: %s\n", esp_err_to_name(consoleError)); return;
+  }
   if (board::ALERT_PIN >= 0) {
     const auto pin = static_cast<gpio_num_t>(board::ALERT_PIN);
     if (!GPIO_IS_VALID_GPIO(pin) || gpio_set_direction(pin, GPIO_MODE_INPUT) != ESP_OK) {
@@ -145,6 +214,7 @@ extern "C" void app_main() {
   platform.probeAddress = probe;
   platform.transferStats = stats;
   platform.resetTransferStats = resetStats;
+  platform.consoleStats = consoleStats;
   platform.busWrite = writeI2c;
   platform.busReceive = receiveI2c;
   platform.sdaPin = board::I2C_SDA;
@@ -158,6 +228,11 @@ extern "C" void app_main() {
     char value = 0;
     for (unsigned count = 0; count < 64 && xQueueReceive(app.input, &value, 0) == pdTRUE; ++count) app.cli.feed(value);
     app.cli.tick();
+#if CONFIG_ESP_CONSOLE_USB_CDC
+    // Retry a previously accepted partial prompt even if the app queue is empty.
+    if (esp_usb_console_write_available()) (void)esp_usb_console_flush();
+#endif
+    app.console.drain(writeConsole);
     vTaskDelay(1);
   }
 }
