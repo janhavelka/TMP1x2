@@ -25,7 +25,7 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 ENV = None
 try:
@@ -296,15 +296,6 @@ def _expected_outputs(project_root: Path) -> Dict[Path, str]:
             doxyfile,
             r'^PROJECT_NUMBER\s*=\s*"[^"]+"\s*$',
             f'PROJECT_NUMBER         = "{version}"',
-        )
-
-    security = project_root / "SECURITY.md"
-    if security.exists():
-        major, minor, _ = _parse_semver(version)
-        outputs[security] = replace_required(
-            security,
-            r'^\|\s*\d+\.\d+\.x\s*\|\s*:white_check_mark:\s*\|$',
-            f'| {major}.{minor}.x   | :white_check_mark: |',
         )
 
     return outputs

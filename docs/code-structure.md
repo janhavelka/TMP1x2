@@ -41,5 +41,7 @@ input, results and statistics while retaining driver format uncertainty.
 Standalone CMake and native IDF register the same explicit core source list.
 PlatformIO includes `src/**` and `examples/common/**`. A custom build must compile
 all five core source files, and all three shared CLI sources when using the example
-processor. The SDK-header helper discovers these sources; the package check
-requires them and links an isolated consumer across each core responsibility.
+processor. The package check requires these sources and links an isolated
+consumer across each core responsibility. Native ESP-IDF examples are validated
+with full firmware builds for both targets, as described in the
+[testing guide](testing.md).
