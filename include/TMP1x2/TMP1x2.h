@@ -349,7 +349,9 @@ public:
   static Status celsiusToCounts(float celsius, bool extended, int16_t& out);
 
 private:
+  static void normalizeConfig(Config& config); ///< Requires validated settings.
   static uint16_t packConfiguration(const Config& config);
+  Status checkConfigurationWord(uint16_t observed, uint16_t expected, const char* message);
   Status guard(bool clean = false) const;
   Status read(uint8_t reg, uint16_t& out, bool tracked);
   Status write(uint8_t reg, uint16_t value, bool tracked);
@@ -368,7 +370,6 @@ private:
     bool refresh = false;
     bool settle = false;
     bool owner = false;
-    bool committed = false;
     uint32_t waitStarted = 0;
     bool waitNeedsAnchor = false;
   };
@@ -383,12 +384,11 @@ private:
                uint32_t timeoutMs, OperationToken& token);
   Status finishJob(Status status);
   bool jobLocked() const { return _jobActive || _jobResultPending; }
-  bool jobExpired() const;
   uint32_t jobRemainingMs() const;
   uint32_t nextJobPollMs() const;
   bool jobWaiting() const;
   Status stepJob(bool& transferred);
-  Status verify(bool tracked);
+  Status verify();
   Status update(const Config& config);
   void markDirty(Status status);
   void markConfigurationDirty(Status status, uint16_t observed);
@@ -431,7 +431,6 @@ private:
   bool _jobWaitNeedsAnchor = false;
   uint32_t _jobStartedMs = 0;
   uint32_t _jobTimeoutMs = 0;
-  uint32_t _jobWaitStarted = 0;
   uint32_t _callbackTimeoutMs = 0;
   Config _jobDesired{};
   Sample _jobSample{};

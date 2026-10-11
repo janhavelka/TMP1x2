@@ -68,7 +68,6 @@ void Cli::finishOperation() {
   if (!st.ok()) { status(st); return; }
   _lastOperation = result; _hasOperationResult = true;
   if (_device.isBound()) _config = _device.getConfig();
-  _oneShot = _device.conversionStarted();
   if (result.hasSample) { _lastSample = result.sample; _hasSample = true; }
   if (_diagnostic.active && _diagnostic.kind == DiagnosticKind::CONFIGTEST) {
     finishConfigTestOperation(result); return;
@@ -289,42 +288,53 @@ void Cli::stop() {
   if (_device.conversionStarted())
     print("Pending one-shot retained; tryread or another watch can consume it.\n");
 }
-void Cli::tickMixed(uint32_t nowMs) {
+bool Cli::tickRunSample(uint32_t nowMs) {
   TMP1x2::Status st{};
   TMP1x2::Sample sample{};
-  const char* label = nullptr;
-  if (_mixedPhase == 0) {
-    label = "probe"; st = _device.probe();
-  } else if (_mixedPhase == 1) {
-    label = "configuration";
-    TMP1x2::ConfigurationInfo info{}; st = _device.readConfiguration(info);
-  } else if (_mixedPhase == 2) {
-    label = "thresholds";
-    float low = 0, high = 0; st = _device.readThresholds(low, high);
-  } else if (_config.mode == TMP1x2::Mode::SHUTDOWN) {
-    if (!_oneShot) {
+  if (_config.mode == TMP1x2::Mode::SHUTDOWN) {
+    // The driver owns pending-conversion state, including after transport errors.
+    if (!_device.conversionStarted()) {
       st = _device.startOneShot();
-      if (st.ok()) { _oneShot = true; _conversionDeadlineMs = nowMs + 500; return; }
+      if (st.ok()) { _conversionDeadlineMs = nowMs + 500; return false; }
     } else {
       st = _device.tryRead(sample);
       if (st.is(TMP1x2::Err::MEASUREMENT_NOT_READY) || st.inProgress()) {
-        if (static_cast<int32_t>(nowMs - _conversionDeadlineMs) < 0) return;
+        if (static_cast<int32_t>(nowMs - _conversionDeadlineMs) < 0) return false;
         recordRunResult(TMP1x2::Status::Error(TMP1x2::Err::TIMEOUT,
-                        "mixed sample deadline; pending one-shot retained"), sample);
-        ++_run.completedCycles;
-        stop(); printPrompt(); return;
+                        _run.mixed ? "mixed sample deadline; pending one-shot retained" :
+                                     "watch conversion deadline; pending one-shot retained"), sample);
+        if (_run.mixed) ++_run.completedCycles;
+        stop(); printPrompt(); return false;
       }
-      _oneShot = _device.conversionStarted();
     }
   } else st = _device.readSample(sample);
-  // Observer APIs return readable hardware values while separately latching
-  // trust mismatches. A diagnostic check must report that mismatch explicitly.
-  if ((_mixedPhase == 1 || _mixedPhase == 2) && st.ok() && _device.hardwareConfigDirty()) {
-    st = _device.hardwareConfigDirtyError();
-    if (st.ok()) st = TMP1x2::Status::Error(TMP1x2::Err::CONFIG_MISMATCH, "configuration remains dirty");
+  recordRunResult(st, sample);
+  return true;
+}
+void Cli::tickMixed(uint32_t nowMs) {
+  if (_mixedPhase == 3) {
+    if (!tickRunSample(nowMs)) return;
+  } else {
+    TMP1x2::Status st{};
+    const char* label = nullptr;
+    if (_mixedPhase == 0) {
+      label = "probe"; st = _device.probe();
+    } else if (_mixedPhase == 1) {
+      label = "configuration";
+      TMP1x2::ConfigurationInfo info{}; st = _device.readConfiguration(info);
+    } else {
+      label = "thresholds";
+      float low = 0, high = 0; st = _device.readThresholds(low, high);
+    }
+    // Observer APIs return readable hardware values while separately latching
+    // trust mismatches. A diagnostic check must report that mismatch explicitly.
+    if (_mixedPhase != 0 && st.ok() && _device.hardwareConfigDirty()) {
+      st = _device.hardwareConfigDirtyError();
+      if (st.ok()) st = TMP1x2::Status::Error(TMP1x2::Err::CONFIG_MISMATCH, "configuration remains dirty");
+    }
+    if (_verbose) print("Mixed %s: ", label);
+    recordRunResult(st, {}, false);
   }
-  if (_verbose && label) print("Mixed %s: ", label);
-  recordRunResult(st, sample, _mixedPhase == 3);
   if (++_mixedPhase == 4) {
     _mixedPhase = 0; ++_run.completedCycles;
     _nextMs = nowMs + _intervalMs;
@@ -347,25 +357,7 @@ void Cli::tick() {
   // watch or a manual one-shot stays pending until an explicit command joins it.
   if (!_watch || static_cast<int32_t>(nowMs - _nextMs) < 0) return;
   if (_run.mixed) { tickMixed(nowMs); return; }
-  TMP1x2::Sample sample{};
-  TMP1x2::Status st{};
-  if (_config.mode == TMP1x2::Mode::SHUTDOWN) {
-    if (!_oneShot) {
-      st = _device.startOneShot();
-      if (st.ok() || st.inProgress()) { _oneShot = true; _conversionDeadlineMs = nowMs + 500; return; }
-    } else {
-      st = _device.tryRead(sample);
-      if (st.is(TMP1x2::Err::MEASUREMENT_NOT_READY) || st.inProgress()) {
-        if (static_cast<int32_t>(nowMs - _conversionDeadlineMs) < 0) return;
-        recordRunResult(TMP1x2::Status::Error(TMP1x2::Err::TIMEOUT, "watch conversion deadline; pending one-shot retained"), sample);
-        stop(); printPrompt(); return;
-      }
-      // A transport failure need not consume the core's pending conversion.
-      // Join it on the next attempt instead of issuing a new start that is BUSY.
-      _oneShot = _device.conversionStarted();
-    }
-  } else st = _device.readSample(sample);
-  recordRunResult(st, sample);
+  if (!tickRunSample(nowMs)) return;
   _nextMs = nowMs + _intervalMs;
   if (--_remaining == 0) { stop(); printPrompt(); }
 }

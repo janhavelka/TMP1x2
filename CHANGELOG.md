@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Changed
+
+- Share configuration normalization and CONFIG-word checks across synchronous,
+  diagnostic and cooperative paths; remove unused apply state and verification
+  options while preserving transport and configuration-trust behavior.
+- Use one conversion timestamp for owner scheduling and one driver-owned
+  pending-conversion flag for shared CLI watch/stress sampling.
+- Remove unreachable CLI branches and the superseded SDK-header-only helper;
+  native ESP-IDF validation uses full firmware builds.
+- Document mux routing, parked operations and timestamp conversion for shared
+  bus owners, including the planned FieldCore-node integration boundary.
+
 ### Fixed
 
 - HIL operation results must match both token and final status. Expected

@@ -53,6 +53,8 @@ class Cli {
   void printTransferStats();
   void printRunStats();
   void recordRunResult(TMP1x2::Status result, const TMP1x2::Sample& sample, bool hasSample = true);
+  // Records a completed attempt; false means waiting or stopped at the deadline.
+  bool tickRunSample(uint32_t nowMs);
   void tickMixed(uint32_t nowMs);
   TMP1x2::Status startOperation(TMP1x2::OperationKind kind, const TMP1x2::Config* desired = nullptr);
   void finishOperation();
@@ -111,7 +113,6 @@ class Cli {
   bool _color = true;
   bool _verbose = true;
   bool _watch = false;
-  bool _oneShot = false;
   uint32_t _remaining = 0;
   uint32_t _intervalMs = 1000;
   uint32_t _nextMs = 0;

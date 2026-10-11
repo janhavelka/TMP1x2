@@ -34,12 +34,7 @@ Status TMP1x2::bind(const Config& config) {
   // The newly selected EM marker can precede a conversion in that format.
   if (changingFormat) _formatRefreshPending = true;
   _config = copy;
-  if (_config.offlineThreshold == 0) _config.offlineThreshold = 1;
-  uint16_t raw = 0;
-  encodeThreshold(copy.lowThresholdC, copy.extendedMode, raw);
-  _config.lowThresholdC = decodeThreshold(raw, copy.extendedMode);
-  encodeThreshold(copy.highThresholdC, copy.extendedMode, raw);
-  _config.highThresholdC = decodeThreshold(raw, copy.extendedMode);
+  normalizeConfig(_config);
   _bound = true;
   return Status::Ok();
 }
@@ -53,7 +48,7 @@ void TMP1x2::unbind() {
   _jobResult = OperationResult{};
   _jobDesired = Config{};
   _jobSample = Sample{};
-  _jobStartedMs = _jobTimeoutMs = _jobWaitStarted = _callbackTimeoutMs = 0;
+  _jobStartedMs = _jobTimeoutMs = _callbackTimeoutMs = 0;
   _jobYieldPoll = _jobWaitNeedsAnchor = false;
   _apply = ApplyState{};
   _config = Config{};
@@ -206,10 +201,8 @@ Status TMP1x2::readRegister(uint8_t reg, uint16_t& out) {
   // Word diagnostics still return a successfully read word, but a tracked
   // observation cannot erase evidence needed to trust subsequent samples.
   if (reg == cmd::REG_CONFIG) {
-    if (!decodeConfiguration(out).valid || (out & cmd::MASK_WRITABLE_CONFIG) !=
-        (packConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG))
-      markConfigurationDirty(Status::Error(Err::CONFIG_MISMATCH,
-          "Observed configuration differs from desired settings", out), out);
+    (void)checkConfigurationWord(out, packConfiguration(_config),
+                                 "Observed configuration differs from desired settings");
   } else if (reg == cmd::REG_TEMPERATURE) {
     Sample sample;
     (void)decodeObservedTemperature(out, sample);

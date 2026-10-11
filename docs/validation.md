@@ -1,5 +1,32 @@
 # Validation results
 
+## 2026-10-11 maintainability audit
+
+The [audit](audit-2026-10-11.md) records the removed duplication, retained
+failure-state handling and read-only FieldCore-node integration review. Local
+checks used Windows, GCC 15.1.0, Python 3.12.10 and the managed PlatformIO Core.
+
+| Check | Result |
+| --- | --- |
+| Strict C++17 CMake build | Passed with `-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Werror` |
+| Full CTest suite | All 11 entries passed, including CLI/HIL fixture and owner wait scheduling across callback duration and clock wrap |
+| PlatformIO native | All 21 core test groups passed |
+| Framework-free PlatformIO consumer | Compiled and linked |
+| Arduino ESP32-S3 / ESP32-S2 | Both full firmware links and binary generation passed with Arduino 3.3.11 / pioarduino 55.03.311 |
+| Native ESP-IDF ESP32-S3 / ESP32-S2 | Both full firmware links and binary generation passed with ESP-IDF 5.5.5 through managed PlatformIO |
+| Release metadata and framework boundaries | Passed; generated version files unchanged |
+| Release archive | 45 files; isolated renamed CMake consumer compiled, linked and ran |
+| Doxygen | Public API, guide coverage, local links and assets passed |
+| Physical hardware | NOT_RUN |
+
+Commands follow the [testing guide](testing.md), using `build-maintainability`
+for CMake, CTest and the release archive. Local firmware/test logs are
+`build-maintainability/arduino.log`, `idf.log`, `pio-native.log`, and
+`Testing/Temporary/LastTest.log`. The IDF results are full native builds, not
+SDK-header compilation. No board was flashed and no FieldCore-node runtime was
+modified or tested. Linux sanitizer execution is provided by CI, not these local
+Windows results.
+
 ## 2026-10-03 HIL runner error handling review
 
 All 45 Python runner tests passed, including the compiled shared CLI fixture.

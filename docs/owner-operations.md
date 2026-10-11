@@ -62,6 +62,36 @@ domain; zero-extending a wrapped sample timestamp loses its epoch. Update any
 adapter context for the request only after admission returns `IN_PROGRESS`, so
 a rejected concurrent request cannot replace the active request's deadline.
 
+## Multiplexed sensors
+
+Keep one driver and callback context per physical sensor, even when sensors on
+different mux channels share an I2C address. The application identifies a target
+by route and address, establishes that route before each `poll(nowMs, 1)`, and
+prevents another task from changing it during the callback. Perform selector
+writes and verification as separate owner phases within the original request
+deadline. A TMP1x2 callback performs one downstream transfer and returns its
+terminal status; it cannot retain the borrowed buffers or return `IN_PROGRESS`
+while waiting for route selection. A failed selection must prevent the poll's
+downstream transfer.
+
+Use `getOperationSnapshot().waiting` and `nextPollMs` to park the actual job during
+conversion waits. Keep its driver, token, callback context and original deadline
+alive while scheduling other channels. Re-establish the route before resuming;
+cancelling and resubmitting work to free the bus would lose the operation's
+identity and leave a retained result to consume. Translate a wrapping due time
+to a bounded relative delay in the same 32-bit clock domain, treating an already
+due value as zero delay, then add that delay to the owner's 64-bit time. Do not
+zero-extend `nextPollMs` into an absolute 64-bit deadline.
+
+For detachable sensors, select the BOM model explicitly and invalidate state
+after an outside reset or replacement. Cancel active work and consume its exact
+terminal result before `invalidateDeviceState()` and `startRecover()`. Rebind
+when the target or callback context changes. If acquisition requires a newly
+requested physical conversion, use shutdown mode with `startRead()` and require
+`result.hasSample` and `result.sample.freshConversion` after a successful result.
+Continuous reads only establish the latest register observation. Leave
+`alertPin = -1` when the connector has no ALERT conductor.
+
 ## Completion, cancellation and trust
 
 Polling a completed job retains its terminal result. `takeResult(token, result)`

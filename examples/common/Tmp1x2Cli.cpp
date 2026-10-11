@@ -68,7 +68,7 @@ void Cli::setup(const Platform& platform, const TMP1x2::Config& config) {
   _length = 0; _overflow = false; _invalidInput = false;
   _diagnostic = Diagnostic{}; _lastDiagnostic = Diagnostic{}; _run = RunStats{};
   _lastOperation = TMP1x2::OperationResult{}; _hasOperationResult = false; _lastResultDiagnostic = false;
-  _operationToken = 0; _hasSample = false; _oneShot = false;
+  _operationToken = 0; _hasSample = false;
   _configuredAlertPin = config.alertPin;
   _configuredGpioRead = config.gpioRead;
   _configuredGpioUser = config.gpioUser;
@@ -246,12 +246,12 @@ void Cli::processCommand(const char* text) {
     return;
   }
   if (equals(command, "bind") && count == 1) {
-    _oneShot = false; _hasSample = false; status(_device.bind(_config));
+    _hasSample = false; status(_device.bind(_config));
     if (_device.isBound()) _config = _device.getConfig();
     return;
   }
-  if (equals(command, "unbind") && count == 1) { _device.unbind(); _oneShot = false; _hasSample = false; print("Transport binding released without I2C.\n"); return; }
-  if (equals(command, "end") && count == 1) { _device.end(); _oneShot = false; _hasSample = false; print("Driver ended; bus remains application-owned.\n"); return; }
+  if (equals(command, "unbind") && count == 1) { _device.unbind(); _hasSample = false; print("Transport binding released without I2C.\n"); return; }
+  if (equals(command, "end") && count == 1) { _device.end(); _hasSample = false; print("Driver ended; bus remains application-owned.\n"); return; }
   if (equals(command, "shutdown") && count == 1) {
     startOperation(TMP1x2::OperationKind::SHUTDOWN); return;
   }
@@ -275,7 +275,7 @@ void Cli::processCommand(const char* text) {
       const auto st = _device.invalidateDeviceState();
       if (!st.ok()) { status(st); return; }
     }
-    _hasSample = false; _oneShot = false; _hasOperationResult = false;
+    _hasSample = false; _hasOperationResult = false;
     print("General-call RESET: ALL compatible devices on this bus may reset. Reinitialize every affected driver, including after an error.\n");
     status(TMP1x2::BusOperations::generalCallReset(_platform.busWrite, _platform.user, _config.i2cTimeoutMs));
     print("Local configuration remains invalid until explicit begin/recover completes.\n"); return;
@@ -298,7 +298,6 @@ void Cli::processCommand(const char* text) {
     return;
   }
   if (equals(command, "addr") || equals(command, "model")) {
-    if (count == 1) { printSettings(); return; }
     if (count != 2 || _device.state() != TMP1x2::DriverState::UNINIT) { print("Use end before selecting address/model.\n"); return; }
     auto selected = _config;
     if (equals(command, "addr")) {
@@ -320,7 +319,7 @@ void Cli::processCommand(const char* text) {
     const auto st = _device.bind(selected);
     if (!st.ok()) { status(st); return; }
     _config = _device.getConfig();
-    _oneShot = false; _hasSample = false;
+    _hasSample = false;
     printSettings(); print("Run begin to apply.\n"); return;
   }
   if ((equals(command, "read") || equals(command, "temp") || equals(command, "tempf") || equals(command, "tryread") || equals(command, "readblocking")) && count <= 2) {
@@ -328,7 +327,6 @@ void Cli::processCommand(const char* text) {
     if ((count == 2 && !equals(command, "readblocking")) || (count == 2 && !integer(args[1], 1, 5000, timeout))) { invalid(); return; }
     TMP1x2::Sample sample{};
     auto st = equals(command, "tryread") ? _device.tryRead(sample) : equals(command, "readblocking") ? _device.readBlocking(sample, timeout) : _device.readSample(sample);
-    _oneShot = _device.conversionStarted();
     if (st.ok()) {
       if (equals(command, "tempf")) {
         _lastSample = sample; _hasSample = true;
@@ -338,7 +336,7 @@ void Cli::processCommand(const char* text) {
     } else status(st);
     return;
   }
-  if ((equals(command, "start") || equals(command, "oneshot")) && count == 1) { const auto st = _device.startOneShot(); _oneShot = _device.conversionStarted(); _conversionDeadlineMs = now() + 500; status(st); return; }
+  if ((equals(command, "start") || equals(command, "oneshot")) && count == 1) { status(_device.startOneShot()); return; }
   if ((equals(command, "poll") || equals(command, "ready")) && count == 1) { bool ready = false; const auto st = _device.isConversionReady(ready); if (st.ok()) print("Ready: %s\n", ready ? "yes" : "no"); else status(st); return; }
   if (equals(command, "watch") || equals(command, "stress") || equals(command, "stress_mix")) {
     const bool mixed = equals(command, "stress_mix");
@@ -355,7 +353,7 @@ void Cli::processCommand(const char* text) {
     _run.busAvailable = _platform.transferStats != nullptr;
     if (_run.busAvailable) _run.busBefore = _platform.transferStats(_platform.user);
     _watch = true; _remaining = amount; _intervalMs = interval; _nextMs = now();
-    _oneShot = _device.conversionStarted(); _conversionDeadlineMs = now() + 500;
+    _conversionDeadlineMs = now() + 500;
     if (mixed)
       print("Mixed stress: %lu cycles, interval=%lu ms; probe/config/threshold/sample; shutdown samples start or join one-shots. Stop cancels.\n",
             static_cast<unsigned long>(amount), static_cast<unsigned long>(interval));
@@ -376,7 +374,7 @@ void Cli::processCommand(const char* text) {
     } else if (equals(command, "rawwrite")) {
       if (count != 3 || !integer(args[1], 1, 3, reg) || !integer(args[2], 0, 65535, value)) { invalid(); return; }
       status(_device.writeRegisterRaw(static_cast<uint8_t>(reg), static_cast<uint16_t>(value)));
-      _hasSample = false; _oneShot = _device.conversionStarted();
+      _hasSample = false;
       print("Raw write bypasses driver health; attempted writes mark configuration dirty.\n");
     } else {
       if (count != 2 || !integer(args[1], 0, 3, reg)) { invalid(); return; }
@@ -430,7 +428,6 @@ void Cli::processCommand(const char* text) {
     return;
   }
   if (equals(command, "mode") || equals(command, "rate") || equals(command, "extended") || equals(command, "alert") || equals(command, "polarity") || equals(command, "faults")) {
-    if (count == 1) { printSettings(); return; }
     if (count != 2) { invalid(); return; }
     auto desired = _config;
     if (equals(command, "mode")) {

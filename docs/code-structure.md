@@ -7,7 +7,7 @@ initialization. Applications own the transport, clocks, GPIOs and serialization.
 
 Most sibling libraries keep their implementation in one source file. TMP1x2
 separates its larger implementation by responsibility to make protocol and
-failure-state review easier, without changing the public API or object layout.
+failure-state review easier, while retaining the public API.
 
 | Implementation | Responsibility |
 | --- | --- |
@@ -20,7 +20,9 @@ failure-state review easier, without changing the public API or object layout.
 Synchronous and cooperative configuration still use the same apply state machine.
 All tracked register access goes through the same transport/health functions.
 Temperature decoding has one implementation shared by diagnostic, manual and
-owner reads. There are no platform-specific core implementations, hidden retries,
+owner reads. Binding, setters and owner admission share threshold normalization;
+CONFIG checks share fixed-bit validation, stable-bit comparison and dirty-state
+observation. There are no platform-specific core implementations, hidden retries,
 dynamic allocations or additional public helper classes.
 
 Both firmware examples compile one shared CLI class:
@@ -37,6 +39,8 @@ This separation follows the diagnostic/style boundaries in MB85RC, ADS1115 and
 CLI setup validates replacements before changing callbacks and rejects active
 work or pending manual conversions. Successful idle reuse clears the old session's
 input, results and statistics while retaining driver format uncertainty.
+Watch and mixed stress share the same sampling path and query the driver's
+pending-conversion state directly.
 
 Standalone CMake and native IDF register the same explicit core source list.
 PlatformIO includes `src/**` and `examples/common/**`. A custom build must compile

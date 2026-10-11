@@ -31,6 +31,15 @@ Status TMP1x2::validateSettings(const Config& c) {
   return Status::Ok();
 }
 
+void TMP1x2::normalizeConfig(Config& config) {
+  if (config.offlineThreshold == 0) config.offlineThreshold = 1;
+  uint16_t raw = 0;
+  (void)encodeThreshold(config.lowThresholdC, config.extendedMode, raw);
+  config.lowThresholdC = decodeThreshold(raw, config.extendedMode);
+  (void)encodeThreshold(config.highThresholdC, config.extendedMode, raw);
+  config.highThresholdC = decodeThreshold(raw, config.extendedMode);
+}
+
 uint16_t TMP1x2::packConfiguration(const Config& c) {
   return static_cast<uint16_t>(cmd::MASK_RESOLUTION |
       (static_cast<uint16_t>(c.faultQueue) << 11) |
@@ -75,27 +84,32 @@ Status TMP1x2::expectedConfigurationRegister(const Config& config, uint8_t reg,
   return Status::Ok();
 }
 
-Status TMP1x2::verify(bool tracked) {
-  uint16_t config = 0, low = 0, high = 0;
-  Status status = read(cmd::REG_CONFIG, config, tracked);
-  if (!status.ok()) return status;
-  if (!decodeConfiguration(config).valid ||
-      (config & cmd::MASK_WRITABLE_CONFIG) !=
-          (packConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG)) {
-    status = Status::Error(Err::CONFIG_MISMATCH, "Configuration readback mismatch", config);
-    markConfigurationDirty(status, config);
+Status TMP1x2::checkConfigurationWord(uint16_t observed, uint16_t expected, const char* message) {
+  if (!decodeConfiguration(observed).valid ||
+      (observed & cmd::MASK_WRITABLE_CONFIG) != (expected & cmd::MASK_WRITABLE_CONFIG)) {
+    const Status status = Status::Error(Err::CONFIG_MISMATCH, message, observed);
+    markConfigurationDirty(status, observed);
     return status;
   }
+  return Status::Ok();
+}
+
+Status TMP1x2::verify() {
+  uint16_t config = 0, low = 0, high = 0;
+  Status status = read(cmd::REG_CONFIG, config, true);
+  if (!status.ok()) return status;
+  status = checkConfigurationWord(config, packConfiguration(_config), "Configuration readback mismatch");
+  if (!status.ok()) return status;
   uint16_t expectedLow = 0, expectedHigh = 0;
   encodeThreshold(_config.lowThresholdC, _config.extendedMode, expectedLow);
   encodeThreshold(_config.highThresholdC, _config.extendedMode, expectedHigh);
-  status = read(cmd::REG_TLOW, low, tracked);
+  status = read(cmd::REG_TLOW, low, true);
   if (!status.ok()) return status;
   // Keep an already observed mismatch even if the following transfer fails.
   // Transport health and the cause of lost configuration trust are separate.
   if (low != expectedLow)
     markDirty(Status::Error(Err::CONFIG_MISMATCH, "Low threshold readback mismatch", low));
-  status = read(cmd::REG_THIGH, high, tracked);
+  status = read(cmd::REG_THIGH, high, true);
   if (!status.ok()) return status;
   if (low != expectedLow || high != expectedHigh) {
     status = Status::Error(Err::CONFIG_MISMATCH, "Threshold readback mismatch",
@@ -163,7 +177,6 @@ Status TMP1x2::stepApply(bool& transferred) {
     case ApplyPhase::FIRST_WRITE:
       // Commit the validated target before an ambiguous write can reach silicon.
       _config = _apply.desired;
-      _apply.committed = true;
       if (_apply.owner) _jobEffect = true;
       markDirty(Status::Ok());
       if (_apply.settle) _formatRefreshPending = true;
@@ -215,12 +228,9 @@ Status TMP1x2::stepApply(bool& transferred) {
       transferred = true;
       status = read(cmd::REG_CONFIG, raw, true);
       if (!status.ok()) return status;
-      if (!decodeConfiguration(raw).valid || (raw & cmd::MASK_WRITABLE_CONFIG) !=
-          ((_apply.config | cmd::MASK_SHUTDOWN) & cmd::MASK_WRITABLE_CONFIG)) {
-        status = Status::Error(Err::CONFIG_MISMATCH, "New-format configuration changed", raw);
-        markConfigurationDirty(status, raw);
-        return status;
-      }
+      status = checkConfigurationWord(raw, _apply.config | cmd::MASK_SHUTDOWN,
+                                      "New-format configuration changed");
+      if (!status.ok()) return status;
       if (!(raw & cmd::MASK_OS))
         return Status::Error(Err::TIMEOUT, "New-format conversion did not finish");
       _apply.phase = ApplyPhase::RESTORE;
@@ -235,12 +245,8 @@ Status TMP1x2::stepApply(bool& transferred) {
       transferred = true;
       status = read(cmd::REG_CONFIG, raw, true);
       if (!status.ok()) return status;
-      if (!decodeConfiguration(raw).valid || (raw & cmd::MASK_WRITABLE_CONFIG) !=
-          (_apply.config & cmd::MASK_WRITABLE_CONFIG)) {
-        status = Status::Error(Err::CONFIG_MISMATCH, "Configuration readback mismatch", raw);
-        markConfigurationDirty(status, raw);
-        return status;
-      }
+      status = checkConfigurationWord(raw, _apply.config, "Configuration readback mismatch");
+      if (!status.ok()) return status;
       _apply.phase = ApplyPhase::VERIFY_LOW;
       return pending;
     case ApplyPhase::VERIFY_LOW:
@@ -324,11 +330,7 @@ Status TMP1x2::update(const Config& config) {
   // the previous format. The observed marker alone cannot establish freshness.
   if (config.extendedMode != _config.extendedMode) _formatRefreshPending = true;
   _config = config;
-  uint16_t raw = 0;
-  encodeThreshold(_config.lowThresholdC, _config.extendedMode, raw);
-  _config.lowThresholdC = decodeThreshold(raw, _config.extendedMode);
-  encodeThreshold(_config.highThresholdC, _config.extendedMode, raw);
-  _config.highThresholdC = decodeThreshold(raw, _config.extendedMode);
+  normalizeConfig(_config);
   return apply();
 }
 
@@ -365,14 +367,9 @@ Status TMP1x2::readConfiguration(ConfigurationInfo& out) {
   Status status = readRegister(cmd::REG_CONFIG, raw);
   if (!status.ok()) return status;
   const ConfigurationInfo info = decodeConfiguration(raw);
-  if (!info.valid) {
-    status = Status::Error(Err::CONFIG_MISMATCH, "Configuration fixed bits invalid", raw);
-    markConfigurationDirty(status, raw);
-    return status;
-  }
-  if ((raw & cmd::MASK_WRITABLE_CONFIG) !=
-      (packConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG))
-    markConfigurationDirty(Status::Error(Err::CONFIG_MISMATCH, "Observed configuration differs from desired settings", raw), raw);
+  // readRegister already retained any configuration/format mismatch evidence.
+  if (!info.valid)
+    return Status::Error(Err::CONFIG_MISMATCH, "Configuration fixed bits invalid", raw);
   out = info;
   return Status::Ok();
 }
@@ -477,7 +474,7 @@ Status TMP1x2::readThresholds(float& lowC, float& highC) {
 Status TMP1x2::verifyConfiguration() {
   Status status = guard();
   if (!status.ok()) return status;
-  status = verify(true);
+  status = verify();
   if (!status.ok()) markDirty(status);
   // Dirty is only cleared by a complete reapply, never by a partial observation.
   return status;

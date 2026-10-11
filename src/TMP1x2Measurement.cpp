@@ -79,12 +79,8 @@ Status TMP1x2::startOneShot() {
   uint16_t current = 0;
   status = read(cmd::REG_CONFIG, current, true);
   if (!status.ok()) return status;
-  if (!decodeConfiguration(current).valid ||
-      (current & cmd::MASK_WRITABLE_CONFIG) !=
-          (packConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG)) {
-    status = Status::Error(Err::CONFIG_MISMATCH, "One-shot configuration changed", current);
-    markConfigurationDirty(status, current); return status;
-  }
+  status = checkConfigurationWord(current, packConfiguration(_config), "One-shot configuration changed");
+  if (!status.ok()) return status;
   if (!(current & cmd::MASK_OS))
     return Status::Error(Err::BUSY, "Previous shutdown conversion is still active");
   status = write(cmd::REG_CONFIG, packConfiguration(_config) | cmd::MASK_OS, true);
@@ -106,12 +102,8 @@ Status TMP1x2::isConversionReady(bool& ready) {
   uint16_t raw = 0;
   status = read(cmd::REG_CONFIG, raw, true);
   if (!status.ok()) return status;
-  if (!decodeConfiguration(raw).valid ||
-      (raw & cmd::MASK_WRITABLE_CONFIG) !=
-          (packConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG)) {
-    status = Status::Error(Err::CONFIG_MISMATCH, "One-shot configuration changed", raw);
-    markConfigurationDirty(status, raw); return status;
-  }
+  status = checkConfigurationWord(raw, packConfiguration(_config), "One-shot configuration changed");
+  if (!status.ok()) return status;
   _conversionReady = (raw & cmd::MASK_OS) != 0;
   ready = _conversionReady;
   return Status::Ok();

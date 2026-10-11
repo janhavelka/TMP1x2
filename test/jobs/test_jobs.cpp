@@ -616,6 +616,45 @@ static void schedulingHintsAndReleasedSnapshots() {
   }
 }
 
+static void oneShotWaitScheduling() {
+  for (bool withClock : {false, true}) {
+    for (const uint32_t started : {uint32_t{100}, UINT32_MAX - 16U}) {
+      Device device; t::TMP1x2 driver;
+      auto config = device.config(withClock); config.mode = t::Mode::SHUTDOWN;
+      CHECK(initialize(driver, device, config));
+      device.ms = started;
+      device.callbackDuration = 3;
+      t::OperationToken token = 0;
+      CHECK(driver.startRead(started, 1000, token).inProgress());
+      const auto triggered = driver.poll(device.ms, 255);
+      CHECK(!triggered.done && triggered.transfers == 2);
+      CHECK(driver.conversionStarted() && driver.getOperationSnapshot().waiting);
+      const uint32_t settledAt = device.ms + t::cmd::CONVERSION_TIME_MAX_MS + 1U;
+      if (withClock) {
+        CHECK(triggered.nextPollMs == settledAt);
+      } else {
+        // The next poll observes callback completion and anchors the wait.
+        CHECK(triggered.nextPollMs == started);
+        const auto anchor = driver.poll(device.ms, 255);
+        CHECK(!anchor.done && anchor.transfers == 0 && anchor.nextPollMs == settledAt);
+      }
+      CHECK(driver.getOperationSnapshot().nextPollMs == settledAt);
+      const unsigned calls = device.calls;
+      device.ms = settledAt - 1U;
+      const auto waiting = driver.poll(device.ms, 255);
+      CHECK(!waiting.done && waiting.transfers == 0 && waiting.nextPollMs == settledAt);
+      CHECK(device.calls == calls);
+      device.ms = settledAt;
+      const auto completed = driver.poll(device.ms, 255);
+      CHECK(completed.done && completed.status.ok() && completed.transfers == 2);
+      t::OperationResult result;
+      CHECK(driver.takeResult(token, result).ok());
+      CHECK(result.hasSample && result.sample.freshConversion && result.sample.celsius == 25.0f);
+      CHECK(!driver.conversionStarted());
+    }
+  }
+}
+
 int main() {
   struct Test { const char* name; void (*run)(); };
   const Test tests[] = {
@@ -633,6 +672,7 @@ int main() {
     {"owner configuration failure matrix", configurationFailureMatrix},
     {"owner protocol failures and stalled time", protocolFailuresAndStalledOwnerTime},
     {"owner scheduling hints and released snapshots", schedulingHintsAndReleasedSnapshots},
+    {"owner one-shot wait scheduling", oneShotWaitScheduling},
   };
   for (const auto& test : tests) {
     const int before = failures; test.run();

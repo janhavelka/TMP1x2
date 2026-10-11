@@ -29,12 +29,7 @@ Status TMP1x2::admit(OperationKind kind, const Config& desired, uint32_t nowMs,
       (desired.offlineThreshold == 0 ? 1 : desired.offlineThreshold) != _config.offlineThreshold)
     return Status::Error(Err::INVALID_PARAM, "Configure cannot change binding or hooks; use bind()");
   _jobDesired = desired;
-  if (_jobDesired.offlineThreshold == 0) _jobDesired.offlineThreshold = 1;
-  uint16_t encoded = 0;
-  (void)encodeThreshold(desired.lowThresholdC, desired.extendedMode, encoded);
-  _jobDesired.lowThresholdC = decodeThreshold(encoded, desired.extendedMode);
-  (void)encodeThreshold(desired.highThresholdC, desired.extendedMode, encoded);
-  _jobDesired.highThresholdC = decodeThreshold(encoded, desired.extendedMode);
+  normalizeConfig(_jobDesired);
   if (!_config.nowMs) { _tickMs = nowMs; _clockSeen = true; }
   _jobStartedMs = now();
   _jobTimeoutMs = timeoutMs;
@@ -77,10 +72,6 @@ Status TMP1x2::startRead(uint32_t nowMs, uint32_t timeoutMs, OperationToken& tok
   return admit(OperationKind::READ, _config, nowMs, timeoutMs, token);
 }
 
-bool TMP1x2::jobExpired() const {
-  return static_cast<uint32_t>(now() - _jobStartedMs) >= _jobTimeoutMs;
-}
-
 uint32_t TMP1x2::jobRemainingMs() const {
   const uint32_t elapsed = static_cast<uint32_t>(now() - _jobStartedMs);
   return elapsed >= _jobTimeoutMs ? 0 : _jobTimeoutMs - elapsed;
@@ -96,7 +87,7 @@ uint32_t TMP1x2::nextJobPollMs() const {
   const bool applying = _jobPhase == JobPhase::APPLY;
   if (applying ? _apply.waitNeedsAnchor : _jobWaitNeedsAnchor) return current;
   const uint32_t elapsed = static_cast<uint32_t>(current -
-      (applying ? _apply.waitStarted : _jobWaitStarted));
+      (applying ? _apply.waitStarted : _conversionStartMs));
   const uint32_t waitRemaining = elapsed >= cmd::CONVERSION_TIME_MAX_MS + 1U ? 0 :
       cmd::CONVERSION_TIME_MAX_MS + 1U - elapsed;
   const uint32_t operationRemaining = jobRemainingMs();
@@ -146,12 +137,8 @@ Status TMP1x2::stepJob(bool& transferred) {
       transferred = true;
       status = read(cmd::REG_CONFIG, raw, true);
       if (!status.ok()) return status;
-      if (!decodeConfiguration(raw).valid || (raw & cmd::MASK_WRITABLE_CONFIG) !=
-          (packConfiguration(_config) & cmd::MASK_WRITABLE_CONFIG)) {
-        status = Status::Error(Err::CONFIG_MISMATCH, "One-shot configuration changed", raw);
-        markConfigurationDirty(status, raw);
-        return status;
-      }
+      status = checkConfigurationWord(raw, packConfiguration(_config), "One-shot configuration changed");
+      if (!status.ok()) return status;
       if (!(raw & cmd::MASK_OS)) {
         if (_jobPhase == JobPhase::READ_CHECK)
           return Status::Error(Err::BUSY, "Previous shutdown conversion is still active");
@@ -169,19 +156,17 @@ Status TMP1x2::stepJob(bool& transferred) {
       _conversionReady = false;
       _conversionClockKnown = true;
       _conversionStartMs = now();
-      _jobWaitStarted = now();
       _jobWaitNeedsAnchor = !_config.nowMs;
       _jobPhase = JobPhase::READ_WAIT;
       _jobYieldPoll = true;
       return pending;
     case JobPhase::READ_WAIT:
       if (_jobWaitNeedsAnchor) {
-        _jobWaitStarted = now();
-        _conversionStartMs = _jobWaitStarted;
+        _conversionStartMs = now();
         _jobWaitNeedsAnchor = false;
         return pending;
       }
-      if (static_cast<uint32_t>(now() - _jobWaitStarted) < cmd::CONVERSION_TIME_MAX_MS + 1U)
+      if (static_cast<uint32_t>(now() - _conversionStartMs) < cmd::CONVERSION_TIME_MAX_MS + 1U)
         return pending;
       _jobPhase = JobPhase::READ_READY;
       return pending;
@@ -217,7 +202,8 @@ PollResult TMP1x2::poll(uint32_t nowMs, uint8_t maxTransfers) {
   _jobYieldPoll = false;
   uint32_t callbackBudget = jobRemainingMs();
   for (;;) {
-    if (jobExpired()) {
+    const uint32_t remaining = jobRemainingMs();
+    if (remaining == 0) {
       (void)finishJob(Status::Error(Err::OPERATION_TIMEOUT, "Owner operation deadline expired"));
       break;
     }
@@ -225,11 +211,6 @@ PollResult TMP1x2::poll(uint32_t nowMs, uint8_t maxTransfers) {
     const bool noTransferPhase = _jobPhase == JobPhase::COMPLETE || _jobPhase == JobPhase::READ_WAIT ||
         (_jobPhase == JobPhase::APPLY && (applyWaiting() || _apply.phase == ApplyPhase::COMPLETE));
     if (!noTransferPhase && (result.transfers >= maxTransfers || callbackBudget == 0)) break;
-    const uint32_t remaining = jobRemainingMs();
-    if (remaining == 0) {
-      (void)finishJob(Status::Error(Err::OPERATION_TIMEOUT, "Owner operation deadline expired"));
-      break;
-    }
     _callbackTimeoutMs = _config.i2cTimeoutMs < remaining ? _config.i2cTimeoutMs : remaining;
     if (!_config.nowMs && _callbackTimeoutMs > callbackBudget) _callbackTimeoutMs = callbackBudget;
     _insidePoll = true;
@@ -242,7 +223,7 @@ PollResult TMP1x2::poll(uint32_t nowMs, uint8_t maxTransfers) {
     }
     // Never publish a completed sample/configuration after a callback overran
     // the owner's deadline. Transport health still records its actual outcome.
-    if (jobExpired()) {
+    if (jobRemainingMs() == 0) {
       (void)finishJob(Status::Error(Err::OPERATION_TIMEOUT, "Owner operation deadline expired"));
       break;
     }

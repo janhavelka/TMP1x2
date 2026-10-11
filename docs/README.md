@@ -1,6 +1,8 @@
 # Documentation
 
 - [Testing guide](testing.md): prerequisites, checks by change type, CI and reports.
+- [2026-10-11 maintainability audit](audit-2026-10-11.md): removed duplication and
+  obsolete code, retained failure-state safeguards and FieldCore-node fit.
 - [2026-10-03 pre-HIL audit](audit-2026-10-03.md): datasheet review, defects,
   regression evidence and remaining hardware gates.
 - [Serial HIL runner](hil-runner.md): automated suites, fixture setup and evidence.
