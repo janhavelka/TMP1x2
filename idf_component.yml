@@ -1,6 +1,8 @@
 version: "1.0.0"
 description: "Framework-neutral TI TMP102/TMP112 temperature sensor driver."
 license: "MIT"
+url: "https://github.com/janhavelka/TMP1x2"
+repository: "https://github.com/janhavelka/TMP1x2.git"
 maintainers:
   - "Jan Havelka (THYMOS Solution s.r.o.) <info@thymos.cz>"
 dependencies:

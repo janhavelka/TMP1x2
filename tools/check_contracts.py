@@ -35,6 +35,15 @@ def main():
                 errors.append(f"allocation/logging/framework call in {path.relative_to(ROOT)}")
     metadata = json.loads((ROOT / "library.json").read_text())
     assert metadata["name"] == "TMP1x2"
+    if metadata.get("homepage") != "https://github.com/janhavelka/TMP1x2":
+        errors.append("library.json homepage must be the TMP1x2 GitHub repository page")
+    if metadata.get("repository") != {"type": "git", "url": "https://github.com/janhavelka/TMP1x2.git"}:
+        errors.append("library.json repository must be the TMP1x2 GitHub git URL")
+    idf_text = (ROOT / "idf_component.yml").read_text(encoding="utf-8")
+    for key, value in (("url", "https://github.com/janhavelka/TMP1x2"),
+                       ("repository", "https://github.com/janhavelka/TMP1x2.git")):
+        if not re.search(rf'^{key}: "{re.escape(value)}"\s*$', idf_text, re.M):
+            errors.append(f"idf_component.yml {key} must be {value}")
     result = subprocess.run([sys.executable, str(ROOT / "scripts/generate_version.py"), "check"], cwd=ROOT)
     if result.returncode:
         errors.append("generated release metadata mismatch")
