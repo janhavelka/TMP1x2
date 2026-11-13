@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Unified author, copyright and contact metadata: THYMOS Solution s.r.o.,
+  Jan Havelka, info@thymos.cz.
 - Qualify eight-address discovery with CONFIG fixed bits and explicit candidate,
   absent, incompatible and transport-error counts; preserve selection and health.
 - Select native USB console defaults per IDF target and assert S2 monitor DTR;

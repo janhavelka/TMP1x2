@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Framework-neutral TI TMP102/TMP112 driver with cooperative operations, passive health, field helpers and shared diagnostic CLIs.",
   "keywords": ["tmp102", "tmp112", "tmp112d", "temperature", "sensor", "i2c", "smbus", "arduino", "esp-idf"],
-  "authors": [{"name": "Thymos Solution s.r.o", "email": "info@thymos.cz", "url": "https://www.thymos.cz"}, {"name": "Jan Havelka", "maintainer": true}],
+  "authors": [{"name": "THYMOS Solution s.r.o.", "email": "info@thymos.cz", "url": "https://www.thymos.cz"}, {"name": "Jan Havelka", "email": "info@thymos.cz", "url": "https://www.thymos.cz", "maintainer": true}],
   "license": "MIT",
   "headers": ["TMP1x2/TMP1x2.h"],
   "build": {"includeDir": "include", "srcDir": "src"},
