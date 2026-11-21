@@ -59,3 +59,9 @@
   compilation, mocks or CI configuration with a native IDF link or hardware test.
 - TI reference artifacts retain their own licenses. Keep source URLs and hashes
   when changing the archive; reference code is not part of the library build.
+
+## Commit and pull request attribution
+
+Credit human contributors for their work. Omit AI co-author trailers, AI-generated
+signatures or sign-offs, generated-by footers, session links, and other AI
+attribution from commit messages and pull request titles and descriptions.
