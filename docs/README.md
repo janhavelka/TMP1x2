@@ -1,5 +1,7 @@
 # Documentation
 
+- [Open questions](open-questions.md) for the first hardware qualification and
+  application decisions about sample freshness and temperature limits.
 - [Testing guide](testing.md): prerequisites, checks by change type, CI and reports.
 - [2026-10-11 maintainability audit](audit-2026-10-11.md): removed duplication and
   obsolete code, retained failure-state safeguards and FieldCore-node fit.
