@@ -14,10 +14,10 @@ claim should cover one product configuration or a wider library matrix.
 For either scope, record the exact configuration and run the relevant physical
 checks for every behavior the claim includes.
 
-**Example.** A TMP112D address-select X2SON at `0x40` responds on I2C. That
-fixture can cover thermometry and address selection. The package lacks an
-ALERT pin, so an ALERT-pin claim needs a different fixture. A response alone
-also cannot identify the fitted model.
+**Example.** A TMP112D in the address-select X2SON package answers at I2C
+address `0x40`. That board can test temperature readings and address
+selection. To check how an ALERT pin behaves, use a package that has one.
+Identify the actual sensor from the fitted part or assembly record.
 
 | Option | Pros | Cons |
 | --- | --- | --- |
@@ -46,11 +46,11 @@ needs its own limit.
 | --- | --- | --- |
 | Use continuous conversion and poll the latest register | Simple for a trend display or periodic monitoring. The caller can enforce a maximum read age. | The read timestamp does not establish a distinct conversion or when the sensor converted the value. |
 | Use shutdown and call `readBlocking()` in a simple owning loop | A short call sequence can obtain a confirmed conversion in a loop that can wait. | The caller waits during conversion. The polling budget can overrun by the last CONFIG and TEMP callbacks, so include their bounded time in the caller's budget. |
-| Use shutdown and request a one-shot through the cooperative owner | Obtains the same confirmed conversion while the owner can schedule other peripherals during the wait. | The caller must schedule polls and consume the terminal result. Both one-shot paths still need time for conversion and transport. |
+| Start one measurement from shutdown and let the code in charge of the bus check for it in later turns | Obtains the same confirmed conversion while other devices can use the bus during the wait. | The caller must schedule checks and collect the final success or error. Both one-shot paths still need time for the measurement and the bus transfers. |
 
 Use continuous mode when a recent observation satisfies the requirement.
-For a conversion required after a specific event, retire any earlier pending
-conversion before starting a new one. Require a successful result with
+For a reading required after a specific event, finish handling any
+earlier conversion before starting a new one. Require a successful result with
 `freshConversion` and report a late or failed request explicitly. Apply
 the chosen age limit to any permitted cached fallback.
 [Sample provenance and age](field-helpers.md) ·
@@ -70,6 +70,11 @@ and cooling below the low limit releases it. In interrupt mode the owner must
 account for reads that acknowledge the latched event. A diagnostic register
 dump between an assertion and its intended handler could clear the latch
 first.
+
+With a high limit of 40 °C and a low limit of 38 °C, the
+2 °C gap (*hysteresis*) keeps the output from toggling while the reading
+hovers around 40 °C. A *latched* alert stays recorded so it can be serviced
+later. The specific reads that clear it are part of the sensor's contract.
 
 | Option | Pros | Cons |
 | --- | --- | --- |
