@@ -60,7 +60,7 @@ semantics and offers compatible convenience names; it does not silently turn
 
 | TMP1x2 entry point | Contract / peer precedent |
 | --- | --- |
-| `bind(config)` | Bus-silent transport/profile admission; ADS1115, OPT4001, INA228, LDC1614 |
+| `bind(config)` | Bus-silent transport/profile admission; ADS1115, OPT4001, INA228, LDC161x |
 | `begin(config)`, `init(config)` | Synchronous apply and verified initialization |
 | `begin()`, `init()` | Reinitialize the existing binding and desired profile |
 | `startInitialize`, `startInit` | Bus-silent cooperative admission, then explicit budgeted polling |

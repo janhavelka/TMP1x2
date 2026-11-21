@@ -20,10 +20,10 @@ worktree inventory remains a record of the preceding audit.
 
 | Area | Strongest applicable examples inspected | TMP1x2 change |
 | --- | --- | --- |
-| Protocol-qualified detection | LDC1614 `examples/common/Ldc1614Cli.cpp`, INA228 and INA3221 `examples/01_basic_bringup_cli/main.cpp`; OPT4001 can use an identity register that TMP lacks | Cooperative address probe followed by CONFIG fixed-bit validation, with raw evidence, separate absence/incompatibility/errors and no automatic model/address selection |
+| Protocol-qualified detection | LDC161x `examples/common/Ldc161xCli.cpp`, INA228 and INA3221 `examples/01_basic_bringup_cli/main.cpp`; OPT4001 can use an identity register that TMP lacks | Cooperative address probe followed by CONFIG fixed-bit validation, with raw evidence, separate absence/incompatibility/errors and no automatic model/address selection |
 | Discovery limits | SHT3x shared CLI and 24Cxx `examples/common/Eeprom24CxxCli.cpp` explicitly separate ACK from identity/geometry | Both broad scan and chip-address discovery report identity as unverified; TMP102/TMP112 cannot be distinguished by their four-register map |
-| Navigable help | LDC1614 grouped help and targeted help; INA228/INA3221 aligned colored sections | Preserve the common colors and command column, add topic filtering and separate connection, owner, ALERT and register workflows |
-| Sustained testing | LDC1614 duration/completion checks; LSM6DS3TR `examples/02_owner_soak/main.cpp` bounded progress; INA228 host soak aggregation | Host-controlled duration soak in finite cooperative batches, quiet sample output, bounded retained summaries, exact sample/transport/health checks and immediate failure reporting |
+| Navigable help | LDC161x grouped help and targeted help; INA228/INA3221 aligned colored sections | Preserve the common colors and command column, add topic filtering and separate connection, owner, ALERT and register workflows |
+| Sustained testing | LDC161x duration/completion checks; LSM6DS3TR `examples/02_owner_soak/main.cpp` bounded progress; INA228 host soak aggregation | Host-controlled duration soak in finite cooperative batches, quiet sample output, bounded retained summaries, exact sample/transport/health checks and immediate failure reporting |
 | USB and serial behavior | Peer PlatformIO settings plus the installed, pinned Arduino and ESP-IDF implementations | Explicit native USB input/output routes, bounded example output queue, loss counters, backend-specific DTR handling and reconnect/stall bench procedures |
 
 SHT3x's low-output soak demonstrates useful compact reporting, but its blocking
@@ -57,7 +57,7 @@ firmware identities.
 | Deadline enforcement | SCD41 `tools/scd41_hil_runner.py`; BME280 `tools/run_i2c_hil.py` | Recheck the remaining budget before writing and after reading; retain late output without treating it as an on-time success |
 | Measurement evidence across batches | SHT3x-main `tools/run_sht3x_hil.py`; SCD41 `tools/scd41_hil_runner.py` | Validate the batch minimum, mean and maximum against the temperature window and require acquisition timestamps to advance |
 | Recoverable run evidence | 24Cxx `tools/hil_runner.py`; BME280 `tools/run_i2c_hil.py` | Atomically checkpoint the verified baseline before mutations; record host provenance at both start and end |
-| Incomplete selected suites | LDC1614 `tools/ldc1614_hil_runner.py` | An unfinished or unrun selected suite prevents an overall PASS |
+| Incomplete selected suites | LDC161x `tools/ldc161x_hil_runner.py` | An unfinished or unrun selected suite prevents an overall PASS |
 | Tests against the command processor | Peer parser tests and TMP1x2 `tools/test_hil_tmp1x2_runner.py` | Keep one native shared-CLI process alive through ordered suites and cleanup; use controlled serial chunks for stale, fragmented and delayed responses |
 
 These additions extend the existing bounded transcript retention, quiet soak,
@@ -77,7 +77,7 @@ bench evidence described in [hardware validation](hardware-validation.md).
 | BME280 | Temperature/humidity/pressure; byte registers and compensation | Health/configuration-trust separation, IDF integration |
 | INA228 | TI power monitor; mixed-width registers | Cooperative jobs, passive health, explicit transfer limits |
 | INA3221 | TI triple power monitor; 16-bit registers | Register transport, sample/configuration provenance |
-| LDC1614 | TI inductance converter; 16-bit registers | Typed chip variants, externally driven cooperative operations |
+| LDC161x | TI inductance converter; 16-bit registers | Typed chip variants, externally driven cooperative operations |
 | LSM6DS3TR | IMU; byte registers and FIFO | Framework-neutral callbacks, operation/configuration state |
 | MB85RC | I2C FRAM family | External ownership and partial-write reporting; memory semantics differ |
 | 24Cxx | I2C EEPROM family | Shared CLI, strict numeric/input parsing, native-IDF packaging; page-write and write-cycle semantics differ |
@@ -109,7 +109,7 @@ results for TMP1x2.
 | BME280 `f66c2ee` | `examples/01_basic_bringup_cli/main.cpp`: complete staged settings, validation, apply, invalidation and job controls | `tools/run_i2c_hil.py`: validation silence, disconnect/invalidation, staged settings, cancellation/budget checks and firmware provenance |
 | INA228 `4e10c70` | `examples/01_basic_bringup_cli/main.cpp`, `docs/CLI.md`: configuration, measurements, registers, diagnostics and framed test commands | `tools/run_i2c_hil.py`: expected firmware provenance and exact zero/one/multiple-transfer assertions |
 | INA3221 `1ad5c69` | `examples/01_basic_bringup_cli/main.cpp`: `job auto`, `job step`, `hilrun`, selftest and cooperative stress | `tools/hil_cli_runner.py`: zero/one budgets, cancellation, retained results and terminal stress checks |
-| LDC1614 `6ec9043` | `examples/common/Ldc1614Cli.cpp`, `examples/esp_idf/basic/main/Ldc1614IdfCli.cpp`: separate front ends with command metadata, detailed help, staged profiles, bus/state views, invalidation, jobs and bounded stress/soak | `tools/ldc1614_cli_contract.py`, `tools/ldc1614_hil_runner.py`, `test/test_cli.cpp`: output contracts, firmware identity, invalid-input state/transfer fences, correlated completion and mode/soak matrices |
+| LDC161x `6ec9043` | `examples/common/Ldc1614Cli.cpp`, `examples/esp_idf/basic/main/Ldc1614IdfCli.cpp`: separate front ends with command metadata, detailed help, staged profiles, bus/state views, invalidation, jobs and bounded stress/soak | `tools/ldc1614_cli_contract.py`, `tools/ldc1614_hil_runner.py`, `test/test_cli.cpp`: output contracts, firmware identity, invalid-input state/transfer fences, correlated completion and mode/soak matrices |
 | LSM6DS3TR `9edafd3` | `examples/01_basic_bringup_cli/main.cpp`, `examples/idf/basic/main/main.cpp`, `examples/common/ProfileCli.h`: staged profile, tokened operations, raw access and reconciliation | `tools/run_hil.py`: invalid-command transport/bus/profile invariants; `examples/02_owner_soak/main.cpp` and `tools/run_owner_soak.py` keep long soak output bounded |
 | MB85RC `f888671` | `examples/01_basic_bringup_cli/main.cpp`, `examples/espidf_basic/main/main.cpp`, `examples/common/DiagnosticCore.h`: memory diagnostics, mode capabilities, staged transfers, scratch backup/restore and stress | `tools/_contract_data.py`, `tools/hil_runner.py`: framework command checks, malformed inputs, verified scratch restoration and bounded soak |
 | 24Cxx `c74c1c6` | `examples/common/Eeprom24CxxCli.cpp`: shared CLI, strict parsing, bounded jobs, staged timeout/offline settings, counters and explicit scratch tests | `test/test_cli/test_cli.cpp`, `docs/hardware-validation.md`: executable parser/operation tests and physical procedures; no standalone serial HIL runner found |
@@ -141,10 +141,10 @@ exercise and shared-bus maintenance.
 - **Owner scheduling:** SHT3x, INA228 and INA3221 expose transfer-budget and
   cancellation evidence. Manual stepping and exact counter assertions make the
   TMP owner's zero/one-transfer contracts reviewable from the CLI.
-- **Configuration trust:** BME280, LDC1614 and TCA9548A expose explicit local
+- **Configuration trust:** BME280, LDC161x and TCA9548A expose explicit local
   invalidation. Cached trust must remain separate from successful transport;
   raw/out-of-band writes need verified recovery before trusted sampling.
-- **Strict command admission:** LSM6DS3TR and LDC1614 hardware runners compare
+- **Strict command admission:** LSM6DS3TR and LDC161x hardware runners compare
   state and transfer counters around malformed-input matrices. Host parser
   tests and serial tests cover different boundaries; neither should accept
   rejection text as proof that no I2C occurred.
@@ -185,13 +185,13 @@ OPT4001 supplies the repository shape and terminal presentation. ADS1115 supplie
 - `I2cWriteFn = Status (*)(uint8_t, const uint8_t*, size_t, uint32_t timeoutMs, void*)`; `I2cWriteReadFn` adds TX/RX buffers and lengths and performs one atomic repeated-start transfer. Caller owns locking, bus lifecycle, pins, clock frequency, timeout enforcement, scheduling and recovery. Preserve meaningful transport errors; do not invent NACK phase information.
 - Bus-silent binding, admission, cancellation and end; one owner operation per instance with caller-driven polls. Initialization, configuration, recovery, shutdown and read jobs have transfer budgets, deadlines and retained results. Synchronous conveniences share the same configuration state machine. See [owner operations](owner-operations.md) and [integration](integration.md). No automatic general-call reset or hidden retry.
 - Four health states: `UNINIT`, `READY`, `DEGRADED`, `OFFLINE`; saturating success/failure counters, consecutive failures, last success/error times and last error. Configuration trust is separate from transport health. Diagnostic probes do not alter tracked driver health. Bus-adapter counters include diagnostic traffic and therefore differ from driver counters.
-- TMP1x2 adopts the OPT4001 help style: cyan `=== TMP1x2 CLI Help ===`, green group headings; cyan left-aligned command column width 32; plain descriptions; prompt `> `. Topic filtering follows the LDC1614 pattern, with common, connection, data, owner job, configuration, ALERT, register and diagnostic groups. ANSI reset `ESC[0m`, red 31, green 32, yellow 33, cyan 36 and gray 90. `color [0|1|off|on]` disables styling. Health is green for READY, yellow for degraded/uninitialized, red for offline/errors.
+- TMP1x2 adopts the OPT4001 help style: cyan `=== TMP1x2 CLI Help ===`, green group headings; cyan left-aligned command column width 32; plain descriptions; prompt `> `. Topic filtering follows the LDC161x pattern, with common, connection, data, owner job, configuration, ALERT, register and diagnostic groups. ANSI reset `ESC[0m`, red 31, green 32, yellow 33, cyan 36 and gray 90. `color [0|1|off|on]` disables styling. Health is green for READY, yellow for degraded/uninitialized, red for offline/errors.
 - Common CLI aliases include `help/?`, `version/ver`, `init/begin`, `drv/health`, `cfg/settings`, `reg/rreg`, plus scan, probe, recover, end, cached sample, finite watch/stress, stop and raw register diagnostics. Job/result/cancel commands expose cooperative progress; quiet mode, run statistics, counter reset and optional ALERT GPIO mirror peer diagnostics. Chip-specific commands follow actual TMP capabilities; no fictitious chip ID or CRC command.
 - Native IDF examples use `app_main`, `driver/i2c_master.h`, `esp_timer` and task timing; no Arduino compatibility layer. Both adapters exercise the same command processor.
 - Sibling build conventions: `library.json` as version source, generated version header and component manifest, C++17 CMake component, PlatformIO S2/S3 Arduino environments and native tests, Windows `scripts/pio.cmd`, explicit framework-free compilation, CLI-contract checks. Hardware validation is a separate claim from builds and simulated transport tests.
 
 These sibling libraries differ in health vocabulary, lifecycle semantics and
-cooperative method names. LDC1614 and LSM6DS3TR expose transport statistics
+cooperative method names. LDC161x and LSM6DS3TR expose transport statistics
 alongside separate operation/configuration state. Status enum ordinals are not
 a shared ABI, and device-specific errors vary. Matching every historical API
 byte-for-byte is neither possible nor appropriate; TMP1x2 follows the common
